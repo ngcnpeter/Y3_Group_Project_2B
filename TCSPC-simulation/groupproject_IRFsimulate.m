@@ -28,7 +28,7 @@ function [output]=groupproject_IRFsimulate(amplitudes,lifetimes,acquisitiontime,
     b=10/19;
     w=irfwidth;
     for i=1:381
-        t=(i-20)*(1/19);
+        t=(i-1)*(1/19);
     	irfraw(i,1)=exp(-4*log(2)*(t-b)*(t-b)/(w*w));
     end
     
