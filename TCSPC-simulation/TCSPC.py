@@ -17,10 +17,29 @@ def deconv_fft(signal,kernel):
     deconv_arr =np.fft.ifft(np.fft.fft(signal)/np.fft.fft(kernel))*np.sum(kernel)
     deconv_arr[deconv_arr<1] = 0
     return deconv_arr
+
+def phasor_fft(y,ker,dt):
+        '''Generate phasor of multi-exponetial decay curves for an array of lifetimes (n_tau) with corresponding amplitudes
+        Photon count rate is 2500 per s
+        Input:  y   signal to be transformed
+                ker IRF kernel
+                dt  time interval (inverse of sampling rate)
+
+        output: angular frequency w, phasor (array of complex number, real<->g, -imag <->s coordinate )'''
+        if len(np.shape(y)) == 1:
+            y_sum = np.sum(y)
+        else:
+            y_sum = np.sum(y, axis = 1)
+        #transpose to allow division for multiple decay curves
+        phasor = (np.fft.fft(y).T/y_sum).T/np.fft.fft(ker)*np.sum(ker)  
+        freq = np.fft.fftfreq(len(ker), d=dt) #frequency
+        w = 2*np.pi*freq #angular frequency
+        return w, phasor
+
 def exp_FT(omega,tau):
     '''Analytic solution to Fourier Transform of exponential decay with lifetime tau'''
     W, Tau = np.meshgrid(omega,tau)
-    return 1/Tau/((W)**2+(1/Tau)**2) + 1j*W/((W)**2+(1/Tau)**2)
+    return 1/Tau/((W)**2+(1/Tau)**2) + 1j*W/Tau/((W)**2+(1/Tau)**2)
 class Simulation():
     def __init__(self,amp,tau, run_time=20*60, irfwidth=1e-3,
                  n_bins = 380, window = 20, bg = 10, t0 = 10/19):
@@ -33,8 +52,10 @@ class Simulation():
         self.bg = bg              #background count rate 10 per s
         self.t0 = t0              #offset of IRF, 10/19 ns
         self.t = np.linspace(0,window,n_bins) #time array in ns
+        self.dt = window/n_bins
         self.ker = stats.norm.pdf(self.t,loc = t0,scale = irfwidth) #gaussian kernel
-        t,self.y_arr = self.MC_exp() #arrays of mono-exxp decays
+        t,self.y_arr = self.MC_exp() #arrays of mono-exp decays
+        #Run the simulations
         t,self.y = self.MC_exp(multi=True)
         t,self.y2 = self.multi_exp_data()
         self.phasor_fft()
@@ -109,16 +130,16 @@ class Simulation():
         N_arr, Tau = np.meshgrid(n_arr,self.tau)
         #Generate time for each photon, sum of normal distribution (IRF) and exponential distribution (decay)
         if multi == False:
-            t_tot = rng.normal(t0,self.irfwidth,size = np.shape(Tau)) + rng.exponential(Tau)
+            self.t_tot = rng.normal(t0,self.irfwidth,size = np.shape(Tau)) + rng.exponential(Tau)
             y = np.zeros((len(self.tau),self.n_bins)) #store output data
             for i in range(len(self.tau)):
-                y[i],self.bins = np.histogram(t_tot[i], bins=self.n_bins,range = (0,self.window))
+                y[i],self.bins = np.histogram(self.t_tot[i], bins=self.n_bins,range = (0,self.window))
                 y[i] += np.full(self.n_bins, int(self.bg*self.run_time/self.n_bins)) # distribute background count uniformly to each bi
         if multi == True:
             # generate an array of n_photon lifetime with weighted probability using amplitude
             tau_arr = rng.choice(self.tau,len(n_arr),p = self.amp)
-            t_tot = rng.normal(t0,self.irfwidth,size = np.shape(tau_arr)) + rng.exponential(tau_arr)
-            y, self.bins = np.histogram(t_tot, bins=self.n_bins,range = (0,self.window))
+            self.t_tot = rng.normal(t0,self.irfwidth,size = np.shape(tau_arr)) + rng.exponential(tau_arr)
+            y, self.bins = np.histogram(self.t_tot, bins=self.n_bins,range = (0,self.window))
         
         if deconv == True:
             y = deconv_fft(self.y,self.ker)
@@ -161,17 +182,12 @@ class Simulation():
 
         output: angular frequency w, phasor (array of complex number, real<->g, -imag <->s coordinate )'''
         if MC == False:
-            t,y = self.multi_exp_data()
+            y = self.y2
         else:
-            t,y = self.MC_exp(multi=multi)  
-        #FFT with deconvolution in Fourier Space
-        y_sum = np.sum(y)
+            y = self.y
         if multi == False:
-            y_sum = np.sum(y, axis = 1)
-        #transpose to allow division for multiple decay curves
-        self.phasor = (np.fft.fft(y).T/y_sum).T/np.fft.fft(self.ker)*np.sum(self.ker)  
-        self.freq = np.fft.fftfreq(len(t), d=np.max(self.t)/len(t)) #frequency
-        self.w = 2*np.pi*self.freq #angular frequency
+            y = self.y_arr
+        self.w, self.phasor = phasor_fft(y,self.ker,self.dt)
         return self.w, self.phasor
     
 
