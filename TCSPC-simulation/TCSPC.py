@@ -39,7 +39,8 @@ def phasor_fft(y,ker,dt):
 def exp_FT(omega,tau):
     '''Analytic solution to Fourier Transform of exponential decay with lifetime tau'''
     W, Tau = np.meshgrid(omega,tau)
-    return 1/Tau/((W)**2+(1/Tau)**2) + 1j*W/Tau/((W)**2+(1/Tau)**2)
+    return 1/(1+(W*Tau)**2) + 1j*W*Tau/(1+(W*Tau)**2)
+    
 class Simulation():
     def __init__(self,amp,tau, run_time=20*60, irfwidth=1e-3,
                  n_bins = 380, window = 20, bg = 10, t0 = 10/19):
