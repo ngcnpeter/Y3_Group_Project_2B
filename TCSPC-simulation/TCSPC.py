@@ -6,8 +6,66 @@ from scipy import stats
 from sympy import *
 from sympy.matrices import Matrix
 import sympy as sp
+from lmfit import Model, Parameters
+import lmfit
+import inspect
 
 rng = np.random.default_rng()
+def exp1(t,tau):
+    '''return mono-exponential exp(-t/tau)
+       t    time array (ns)
+       tau  lifetime   (ns)'''
+    return np.exp(-t/tau)
+
+def exp2(t,A1,tau1,tau2):
+    '''returns bi-exponential A1*exp(-t/tau1) + (1-A1)*exp(-t/tau2)
+       t    time array (ns)
+       A1   amplitude 1
+       tau1 lifetime 1 (ns)
+       tau2 lifetime 2 (ns)
+    '''
+    return A1*np.exp(-t/tau1)+(1-A1)*np.exp(-t/tau2)
+
+def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20*60):
+    '''use least-square fit for given exponential function (exp1 or exp2)
+       Inputs:
+       func      exp function to be fitted 
+       tdata     time array (non-trimmed)
+       ydata     photon count (non-trimmed)
+       guess     guess intial parameters for fitting
+       end       trim the end point to avoid low count statistics
+       bg        background count per s
+       run_time  run_time (s)
+       Outputs:
+       result        lmfit result
+       params_opt    fitted parameters
+       chi2_red      reduced chi2
+       fit_report    fit_report from lmfit
+       '''
+    model = Model(func)
+    params = Parameters()
+    # Get the parameter names and default values from the input function
+    params_name = inspect.signature(func).parameters
+    params_name = list(params_name.keys())[1:]  # Exclude 'x' from parameters
+    for i,name in enumerate(params_name):
+    # Add initial guess value for the parameter
+        params.add(name,value=guess[i],min = 0)
+
+    #Trim and scale data for fitting
+    ydata = ydata-np.full(len(ydata),int(bg*run_time/len(tdata)))#subtract background from each bin
+    max_idx = np.argmax(ydata) #index of data point with maximum photon count N(0)
+    tdata = tdata[:end-max_idx] #start from t = 0
+    ydata = ydata[max_idx:end]  #start from max.
+    ydata = ydata/ydata[0] # scale y data such that the beginning is 1 
+
+    
+    result = model.fit(ydata, params, t=tdata) #perform least squares fit
+    params_opt = result.params #optimized params
+    chi2= result.chisqr #chi squared
+    chi2_red = result.chisqr/(len(tdata)-len(params))
+    fit_report = result.fit_report()
+    return result, params_opt, chi2_red, fit_report
+
 
 def deconv_fft(signal,kernel):
     '''Deconvolve decay data with IRF kernel using FFT
@@ -122,13 +180,13 @@ class Simulation():
         self.window = window      #decay data time window, ns, default =20
         self.bg = bg              #background count rate 10 per s
         self.t0 = t0              #offset of IRF, 10/19 ns
-        self.t = np.linspace(0,window,n_bins) #time array in ns
+        self.t = np.linspace(0,window,n_bins+1)[:-1] #time array in ns
         self.dt = window/n_bins
         self.ker = kernel(self.t,t0,irfwidth) #gaussian kernel
         self.MC_exp()
         t,self.y_arr = self.MC_exp_hist(multi = False) #arrays of mono-exp decays
-        t,self.y = self.MC_exp_hist(multi = True)
-        t,self.y2 = self.multi_exp_data()
+        t,self.y = self.MC_exp_hist(multi = True) #array of multi-exponential decays
+        t,self.y2 = self.multi_exp_data() #array of multi-exponential decays
         self.phasor_fft()
 
     def multi_exp_data(self,deconv = False):
@@ -175,7 +233,7 @@ class Simulation():
         y = rng.poisson(noiseless)
 
         if deconv == True:
-            y = deconv(self.y,self.ker)
+            y = deconv_fft(y,self.ker)
 
         return self.t,y
 
@@ -203,7 +261,9 @@ class Simulation():
             self.t_tot_2D = rng.normal(t0,self.irfwidth,size = np.shape(Tau)) + rng.exponential(Tau)
         if True:
             # generate an array of n_photon lifetime with weighted probability using amplitude
-            tau_arr = rng.choice(self.tau,len(n_arr),p = self.amp)
+            # note that normalized exponential probability density function (pdf) is tau*exp(-t/tau)
+            # the weighting of exp pdf of different tau becomes: A_i*tau_i, A_i is the amplitude of decay
+            tau_arr = rng.choice(self.tau,len(n_arr),p = self.amp*self.tau/np.sum(self.amp*self.tau))
             self.t_tot = rng.normal(t0,self.irfwidth,size = np.shape(tau_arr)) + rng.exponential(tau_arr)
         if multi == True:
             return self.t_tot
@@ -255,6 +315,23 @@ class Simulation():
                     ax.plot(self.t,y[i],label = str(self.tau[i]) + ' ns')
         
         ax.legend()
+    def fit(self,func,y = None,plot = False,guess = None,end = None, bg = None, run_time = None,ax=None):
+        #set default values from object attributes unless specified
+        if y is None:
+            y = self.y #photon count
+        guess = guess or list(self.amp[:-1])+self.tau #initial guess for fit
+        end = end or int((self.n_bins*3/4)) #end index
+        bg = bg or self.bg
+        run_time = run_time or self.run_time
+        self.fit_result, self.par, self.chi2_red,self.fit_report = exp_fit(
+            func,self.t,y,guess = guess,end = end, bg = bg, run_time = run_time)
+        if plot == True:
+            #pass an ax object for fitting
+            self.fit_result.plot_fit(ax)
+            ax.set_yscale('log')
+            ax.set_ylabel('Photon Count')
+            ax.set_xlabel('time/ns')
+            
 
     def phasor_fft(self,MC=True,multi = True,n_bins = None, window = None):
         '''Generate phasor of multi-exponetial decay curves for an array of lifetimes (n_tau) with corresponding amplitudes
