@@ -9,6 +9,7 @@ import sympy as sp
 from lmfit import Model, Parameters
 import lmfit
 import inspect
+import pandas as pd
 
 rng = np.random.default_rng()
 def exp1(t,tau):
