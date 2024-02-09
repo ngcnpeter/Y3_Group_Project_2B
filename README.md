@@ -5,7 +5,7 @@
 
 #### Time-Correlated Single Photon Counting (TCSPC) Analysis
 
-This Python script provides functions for performing time-correlated single photon counting (TCSPC) analysis. It includes functions for fitting mono-exponential and bi-exponential decay curves, deconvolving decay data with an instrument response function (IRF) kernel using FFT, generating phasor plots, and solving for fractional intensities and lifetimes from phasor coordinates.
+This Python script provides functions for performing time-correlated single photon counting (TCSPC) analysis. It includes functions for fitting mono-exponential and bi-exponential decay curves, deconvolving decay data with an instrument response function (IRF) kernel using FFT, generating phasor plots, and solving for amplitudes and lifetimes from phasor coordinates.
 
 ## Dependencies
 
@@ -39,7 +39,7 @@ from TCSPC import *
 - `deconv_fft(signal, kernel)`: Deconvolves the decay data (`signal`) with the instrument response function (IRF) kernel using Fast Fourier Transform (FFT).
 - `phasor_fft(y, ker, dt)`: Generates phasor coordinates for multi-exponential decay curves given an array of lifetimes (`y`) and corresponding amplitudes, along with the IRF kernel (`ker`) and time interval (`dt`).
 - `phasor_plot(ax, w, phasor)`: Creates a phasor plot for data transformed at a/an array of angular frequencies (`w`) using the phasor coordinates (`phasor`).
-- `phasor_solve(w, phasor, n=2, num=False, guess=None)`: Solves for fractional intensities and lifetimes from simulated phasor coordinates (`phasor`) using either numerical or analytic solution methods.
+- `phasor_solve(w, phasor, n=2, num=False, guess=None)`: Solves for amplitudes and lifetimes from simulated phasor coordinates (`phasor`) using either numerical or analytic solution methods.
 
 4. Perform the desired analysis by calling the appropriate function with the necessary arguments.
 

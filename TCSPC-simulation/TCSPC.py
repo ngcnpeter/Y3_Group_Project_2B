@@ -176,26 +176,26 @@ def phasor_plot(ax,w,phasor):
     ax.grid()
 
 def phasor_solve(w,phasor,n=2,num = False,guess=None):
-    '''Solve for fractional intensities and lifetimes from simulated phasor coordinates
+    '''Solve for samplitudes and lifetimes from simulated phasor coordinates
        Input: w        angular frequency array
               phasor   output from phasor_fft
               n        number of components (Default 2)
               num      True for numerical solution, False for analytic solution
               guess    guess for numerical solution'''
     # Define the variables and symbols
-    f = symbols('f1:%d' % (n+1)) #fractional intensities
+    A = symbols('A1:%d' % (n+1)) #amplitudes
     t = symbols('t1:%d' % (n+1)) #lifetimes
 
-    equations = [sum([f[j]for j in range(n)])-1]
+    equations = [sum([A[j]for j in range(n)])-1]
 
     # Generate the equations using different angular frequencies
     for i in range(1,2*n):
-        equation = sum([f[j] / ((w[i] * t[j])**2 + 1) for j in range(n)]) - np.real(phasor)[i] #g coordinate of phasor
+        equation = sum([A[j] / ((w[i] * t[j])**2 + 1) for j in range(n)]) - np.real(phasor)[i] #g coordinate of phasor
         equations.append(equation)
 
     # Solve the system of equations
     if num == True:
-        soluition = nsolve(equations,[n for n in f]+[n for n in t],guess, solver='bisect')
+        soluition = nsolve(equations,[n for n in A]+[n for n in t],guess, solver='bisect')
     else:
         solution = solve(equations)[0]
     return solution
@@ -228,7 +228,7 @@ class Simulation():
                 irfwidth   - sigma of Gaussian IRF
                 n_bins     - no. of histogram bins, default = 380
                 window     - decay data time window, ns, default =20
-        Outputs: t (time array), noisydecay (decay data)'''
+        Outputs: self.t (time array), self.y2 (decay data)'''
         amplitudes = self.amp 
         lifetimes  = self.tau
         acquisitiontime = self.run_time
@@ -261,12 +261,12 @@ class Simulation():
         # and add on 'bg' counts per second spread evenly across all bins
         noiseless = noiseless + (self.bg * acquisitiontime /self.n_bins)
         # finally add Poisson noise to each bin
-        y = rng.poisson(noiseless)
+        self.y2 = rng.poisson(noiseless)
 
         if deconv == True:
-            y = deconv_fft(y,self.ker)
+            self.y2 = deconv_fft(self.y2,self.ker)
 
-        return self.t,y
+        return self.t,self.y2
 
     def MC_exp(self, multi = False):
         '''If multi == False:
