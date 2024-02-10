@@ -131,6 +131,7 @@ def phasor_fft(y,ker,dt):
             y_sum = np.sum(y, axis = 1)
         #transpose to allow division for multiple decay curves
         phasor = (np.fft.fft(y).T/y_sum).T/np.fft.fft(ker)*np.sum(ker)  
+        phasor.imag*=-1 #times -1 to imaginary component to make it positive
         freq = np.fft.fftfreq(len(ker), d=dt) #frequency
         w = 2*np.pi*freq #angular frequency
         return w, phasor
@@ -164,22 +165,22 @@ def multi_exp_FT(omega,A,tau):
     A         amplitude array
     tau       lifetime'''
     coeff = A*tau/np.sum(A*tau) #coefficient of the sum of mono_exp_FT
-    mono_arr = np.array([exp_FT(omega,tau[i]) for i in range(len(A))]) #array of FT of each lifetime
-    return np.sum(coeff *mono_arr)
+    mono_arr = exp_FT(omega,tau)#array of FT of each lifetime
+    return np.dot(coeff,mono_arr)
 
 
 def phasor_plot(ax,w,phasor):
     '''Create phasor plot for data transformed at a/an array of angular frequency w
        Inputs:
        ax      plk.axes object for plotting
-       w       angular frequency (value or array) /GHz
+       w       angular frequency (value or array) /GHz chosen to be plotted
        phasor  FFT of a decay curve
        '''
     x = np.linspace(0,1,1000)
     y_circ = np.sqrt(0.5**2-(x-0.5)**2)
     for i in range(len(w)):
         w0 = w[i]
-        ax.scatter(np.real(phasor[i]), -np.imag(phasor[i]), label = f'f = {w0/2/np.pi:.3f} GHz')
+        ax.scatter(np.real(phasor[i]), np.imag(phasor[i]), label = f'f = {w0/2/np.pi:.3f} GHz')
         ax.plot(x,y_circ,'k') #universal circle
         ax.legend()
     ax.set_xlim(0, 1)
