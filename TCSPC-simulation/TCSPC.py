@@ -148,9 +148,24 @@ def phasor_coordinate(w,tau):
     return 1/(1+(w*tau)**2), w*tau/(1+(w*tau)**2)
 
 def exp_FT(omega,tau):
-    '''Analytic solution to Fourier Transform of exponential decay with lifetime tau'''
+    '''Analytic solution to Fourier Transform (normalized, i.e. divided by int_0^infty exp(-t/tau)dt) 
+    of mono exponential decay with components lifetime tau
+    Input:
+    omega     angular frequency array
+    tau       lifetime'''
     W, Tau = np.meshgrid(omega,tau)
     return 1/(1+(W*Tau)**2) + 1j*W*Tau/(1+(W*Tau)**2)
+
+def multi_exp_FT(omega,A,tau):
+    '''Analytic solution to Fourier Transform (normalized, i.e. divided by int_0^infty exp(-t/tau)dt) 
+    of multi exponential decay with components lifetime tau
+    Input:
+    omega     angular frequency array
+    A         amplitude array
+    tau       lifetime'''
+    coeff = A*tau/np.sum(A*tau) #coefficient of the sum of mono_exp_FT
+    mono_arr = np.array([exp_FT(omega,tau[i]) for i in range(len(A))]) #array of FT of each lifetime
+    return np.sum(coeff *mono_arr)
 
 
 def phasor_plot(ax,w,phasor):
@@ -187,10 +202,11 @@ def phasor_solve(w,phasor,n=2,num = False,guess=None):
     t = symbols('t1:%d' % (n+1)) #lifetimes
 
     equations = [sum([A[j]for j in range(n)])-1]
+    At_sum = sum([A[j]*t[j]for j in range(n)])
 
     # Generate the equations using different angular frequencies
     for i in range(1,2*n):
-        equation = sum([A[j] / ((w[i] * t[j])**2 + 1) for j in range(n)]) - np.real(phasor)[i] #g coordinate of phasor
+        equation = sum([A[j]*t[j]/At_sum/ ((w[i] * t[j])**2 + 1) for j in range(n)]) - np.real(phasor)[i] #g coordinate of phasor
         equations.append(equation)
 
     # Solve the system of equations
