@@ -195,9 +195,11 @@ def phasor_solve(w,phasor,n=2,num = False,guess=None):
 
     # Solve the system of equations
     if num == True:
-        soluition = nsolve(equations,[n for n in A]+[n for n in t],guess, solver='bisect')
+        solution = nsolve(equations,[n for n in A]+[n for n in t],guess, solver='bisect')
+        solution = np.concatenate(np.array(solution).astype(float)) #1d array
     else:
         solution = solve(equations)[0]
+        solution = {str(k):float(v) for k,v in solution.items()} #convert symbols to string
     return solution
 
 class Simulation():
