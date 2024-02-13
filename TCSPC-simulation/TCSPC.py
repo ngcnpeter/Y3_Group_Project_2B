@@ -235,9 +235,14 @@ class Simulation():
         self.ker = kernel(self.t,t0,irfwidth) #gaussian kernel
         self.MC_exp()
         t,self.y_arr = self.MC_exp_hist(multi = False) #arrays of mono-exp decays
-        t,self.y = self.MC_exp_hist(multi = True) #array of multi-exponential decays
-        t,self.y2 = self.multi_exp_data() #array of multi-exponential decays
-        self.phasor_fft()
+        t,self.y = self.MC_exp_hist(multi = True)      #array of multi-exponential decays
+        t,self.y2 = self.multi_exp_data()              #array of multi-exponential decays
+        #store angular frequency and correspnding fourier transform of self.y 
+        #in self.w and self.phasor
+        self.phasor_fft()  
+        #store photon count data  of 100 simulationsin self.sim_data 
+        # and corresponding phasor data in self.phasor_data
+        self.repeat_sim(100) 
 
     def multi_exp_data(self,deconv = False):
         '''Generate TCSPC fluorescence decay data (not Monte Carlo method)
@@ -406,8 +411,115 @@ class Simulation():
         self.w, self.phasor = phasor_fft(y,ker,self.window/len(self.bins))
         return self.w, self.phasor
 
-    
+    def repeat_sim(self,n_repeat,MC = False, multi = True):
+        '''Store photon count array of n_repeat simulations in sim_data (n_repeat by n_bins) array'''
+        #create array to store simulation data
+        self.sim_data = np.zeros((n_repeat,self.n_bins))
+        #repeat simulation
+        for i in range(n_repeat):
+            if MC == False:
+                bins,y = self.multi_exp_data()
+            if MC == True:
+                self.MC_exp(multi = multi) #default multi-exponential
+                bins,y = self.MC_exp_hist()
+            self.sim_data[i] = y             #store simulated data
+        self.w, self.phasor_data = phasor_fft(self.sim_data,self.ker,self.dt) #transform stored data to phasor
 
 
+class Phasor(Simulation):
+    def __init__(self, amp, tau, run_time=20 * 60, irfwidth=0.001, n_bins=380, window=20, bg=10, t0=10 / 19):
+        super().__init__(amp, tau, run_time, irfwidth, n_bins, window, bg, t0)
+        self.A_funcs_list(n = len(self.tau))
+        self.generate_df()
     
+    def A_funcs_list(self,n=2):    
+        '''Return a list of functions to evaluate amplitude  A_i of n-eponential 
+        from calculated weighting (f_i) and lifetimes (t_i) in phasor plot
+        in the form {'A_i':A_i_sol_func} 
+        Input:
+        tuple of (f1, ... fn, t1,...,tn)
+        Output:
+        array of A1,...An
+        '''
+        A = symbols('A1:%d' % (n+1)) #amplitudes
+        f = symbols('f1:%d' % (n+1)) #weighting of each phasor -> the system is more easily solved for f than A
+        t = symbols('t1:%d' % (n+1)) #lifetimes
+        A_eqs = [A[i]*t[i]/sum([A[j]*t[j] for j in range(n)])-f[i] for i in range(n-1)]
+        A_eqs.append(sum([A[i] for i in range(n)])-1 )
+        A_soln = solve(A_eqs,[n for n in A]) #solve for A in terms of f and t
+        #Dictionary of functions to evaluate A_i {'A_i':A_i_sol_func}
+        self.A_funcs = [lambdify([v for v in f]+[v for v in t], expr) for key, expr in A_soln.items()]
+        return self.A_funcs
+
+    def A_solve(self,f_t_tuple):
+        '''Return an array of amplitude  A_i of n-eponential evaluated at
+        calculated weighting (f_i) and lifetimes (t_i) in phasor plot
+        using functions in self.A_funcs
+        in the form {'A_i':A_i_sol_func} 
+        Input:
+        tuple of (f1, ... fn, t1,...,tn)
+        Output:
+        array of A1,...An
+        '''
+        A_array = [func(*f_t_tuple) for func in self.A_funcs]
+        return np.array(A_array)
+
+    def phasor_solve(self,w=None,phasor=None,n=2,num = False,guess=None):
+        '''Solve for samplitudes and lifetimes from simulated phasor coordinates
+        Input: w        angular frequency array
+                phasor   output from phasor_fft
+                n        number of components (Default 2)
+                num      True for numerical solution, False for analytic solution
+                guess    guess for numerical solution'''
+        #set default values unless given
+        if w is None:
+            w = self.w 
+        if phasor is None:
+            phasor = self.phasor
+        # Define the variables and symbols
+        A = symbols('A1:%d' % (n+1)) #amplitudes
+        f = symbols('f1:%d' % (n+1)) #weighting of each phasor -> the system is more easily solved for f than A
+        t = symbols('t1:%d' % (n+1)) #lifetimes
+        equations = [sum([f[j]for j in range(n)])-1]
+
+        # Generate the equations using different angular frequencies to solve for f and t
+        for i in range(1,2*n):
+            #equation = sum([A[j]*t[j]/At_sum/ ((w[i] * t[j])**2 + 1) for j in range(n)]) - np.real(phasor)[i] #g coordinate of phasor
+            equation = sum([f[j]/ ((w[i] * t[j])**2 + 1) for j in range(n)]) - np.real(phasor)[i] #g coordinate of phasor
+            equations.append(equation)
+
+        # Solve the system of equations
+        if num == True:
+            self.solution = nsolve(equations,[n for n in f]+[n for n in t],guess, solver='bisect')
+            self.solution = np.concatenate(np.array(self.solution).astype(float)) #1d array
+            self.solution[:n] = self.A_solve(self.solution)
+        else:
+            self.solution = solve(equations)[0]
+            self.solution = np.array([v for v in self.solution.values()]).astype(float) #turn solution into 1d array
+            self.solution[:n] = self.A_solve(self.solution)
+        return self.solution
+
+    def generate_df(self,w = None, phasor_data = None,num=True):
+        ''' Generate DataFrame of solved A and t values for self.phasor_data (repeated simulations)
+        Input: 
+        w          angular frequency array
+        phasor_data phasor_data array of repeated simulations
+        num        True for numerical solution, False for analytic solution
+        Output:
+        phasor_df DataFrame to store parameters of bi-exponential decays'''
+        if w is None:
+            w = self.w 
+        if phasor_data is None:
+            phasor_data = self.phasor_data
+        self.df = pd.DataFrame()
+        for i in range(len(self.phasor_data)):
+            sol = self.phasor_solve(w,phasor_data[i],num = num, guess = list(self.amp)+self.tau) #solution
+            sol = {k:v for k,v in zip(['A1','A2','t1','t2'],sol)} #convert solution to dict 
+            phasor_dict = {str(round(self.w[n]/np.pi/2,2)):phasor_data[i,n]for n in range(1,5)} #record the phasor positions
+            sol.update(phasor_dict)# append dictionary
+            self.df = pd.concat([self.df,pd.DataFrame(sol, index=[i])]) #concatenate the results into 1 dataframe
+        return self.df
+
+
+
  
