@@ -373,7 +373,8 @@ class Simulation():
                     ax.plot(self.t,y[i],label = str(self.tau[i]) + ' ns')
         
         ax.legend()
-    def fit(self,func,y = None,plot = False,guess = None,end = None, bg = None, run_time = None,ax=None):
+    def fit(self,func,y = None,plot = False,guess = None,end = None, 
+    bg = None, run_time = None,ax=None,weights=None,method = 'cobyla'):
         #set default values from object attributes unless specified
         if y is None:
             y = self.y #photon count
@@ -382,7 +383,7 @@ class Simulation():
         bg = bg or self.bg
         run_time = run_time or self.run_time
         self.fit_result, self.par, self.chi2_red,self.fit_report = exp_fit(
-            func,self.t,y,guess = guess,end = end, bg = bg, run_time = run_time)
+            func,self.t,y,guess = guess,end = end, bg = bg, run_time = run_time ,weights=weights,method=method)
         if plot == True:
             #pass an ax object for fitting
             self.fit_result.plot_fit(ax)
