@@ -27,7 +27,7 @@ def exp2(t,A1,tau1,tau2):
     '''
     return A1*np.exp(-t/tau1)+(1-A1)*np.exp(-t/tau2)
 
-def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20*60,weights = None):
+def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20*60,weights = None,method = 'cobyla'):
     '''use least-square fit for given exponential function (exp1 or exp2)
        Inputs:
        func      exp function to be fitted 
@@ -38,6 +38,7 @@ def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20
        bg        background count per s
        run_time  run_time (s)
        weights   weights for the data points of the fit (1/yerr)
+       method    fit method
        Outputs:
        result        lmfit result
        params_opt    fitted parameters
@@ -61,7 +62,7 @@ def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20
     ydata = ydata/ydata[0] # scale y data such that the beginning is 1 
 
     
-    result = model.fit(ydata, params, t=tdata,weights = weights) #perform least squares fit
+    result = model.fit(ydata, params, t=tdata,weights = weights,method = method) #perform least squares fit
     params_opt = result.params #optimized params
     chi2= result.chisqr #chi squared
     chi2_red = result.chisqr/(len(tdata)-len(params))
@@ -80,6 +81,7 @@ def fit_df(results):
     par_col = ['_val','init_value','stderr','correl'] #column names for parameter dataframe
     attribute_names = ['chisqr', 'redchi'] + par_col
     info_dict = {attribute_name: [] for attribute_name in attribute_names}
+    par_list = []
     par_df = pd.DataFrame()
 
     for result in results:
@@ -88,13 +90,14 @@ def fit_df(results):
         par_df_new = par_df_new.loc[par_col] #select value, initial value, error, and correlation 
         par_df_new.loc['correl'] = [{k : f'{float(v):.3g}' for k,v in pair.items() }for pair in  par_df_new.loc['correl'].values] #round correlations
         #append the new df to exisiting df
-        par_df = pd.concat([par_df,par_df_new])
+        par_list.append(par_df_new)
         info_dict['chisqr'].append(result.chisqr) #chi2
         info_dict['redchi'].append(result.redchi) #reduced chi2
         for col in par_col[:-1]:
             info_dict[col].append([f'{v:.3g}' for v in par_df_new.T[col].values]) #store as list in this data frame
         info_dict['correl'].append(par_df_new.T['correl'].values) #correlation dictionary
     info_df = pd.DataFrame(info_dict) 
+    par_df = pd.concat(par_list,keys = range(len(par_list)))
     return info_df, par_df
 
 
