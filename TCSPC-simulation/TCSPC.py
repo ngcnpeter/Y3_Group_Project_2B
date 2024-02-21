@@ -245,7 +245,9 @@ class Simulation():
         self.phasor_fft()  
         #store photon count data  of 100 simulationsin self.sim_data 
         # and corresponding phasor data in self.phasor_data
-        self.repeat_sim(100) 
+        self.repeat_sim(100)
+
+    
 
     def multi_exp_data(self,deconv = False):
         '''Generate TCSPC fluorescence decay data (not Monte Carlo method)
@@ -428,13 +430,23 @@ class Simulation():
                 bins,y = self.MC_exp_hist()
             self.sim_data[i] = y             #store simulated data
         self.w, self.phasor_data = phasor_fft(self.sim_data,self.ker,self.dt) #transform stored data to phasor
+    
+    def repeat_sim_results(self):
+        '''store the results of fit of repeated simulation in info_df, par_df and val_df'''
+        self.fit_results = [] #empty list to store lmfit ModelResult objects
+        for y in self.sim_data:
+            weights = np.sqrt(y)[np.argmax(y):int((15/20*self.n_bins))]
+            self.fit(exp2,y,[self.amp[0]]+self.tau,weights = weights,method = 'cobyla') 
+            self.fit_results.append(self.fit_result)
+        self.info_df, self.par_df = fit_df(self.fit_results)
+        self.val_df = self.par_df.loc[(slice(0,99),'_val'),:] #df for values only
 
 
 class Phasor(Simulation):
     def __init__(self, amp, tau, run_time=20 * 60, irfwidth=0.001, n_bins=380, window=20, bg=10, t0=10 / 19):
         super().__init__(amp, tau, run_time, irfwidth, n_bins, window, bg, t0)
         self.A_funcs_list(n = len(self.tau))
-        self.generate_df()
+        #self.generate_df()
     
     def A_funcs_list(self,n=2):    
         '''Return a list of functions to evaluate amplitude  A_i of n-eponential 
@@ -474,8 +486,9 @@ class Phasor(Simulation):
                 phasor   output from phasor_fft
                 n        number of components (Default 2)
                 num      True for numerical solution, False for analytic solution
-                guess    guess for numerical solution'''
+                guess    guess for numerical solution. input list [f1, f2, t1, t2]'''
         #set default values unless given
+        
         if w is None:
             w = self.w 
         if phasor is None:
