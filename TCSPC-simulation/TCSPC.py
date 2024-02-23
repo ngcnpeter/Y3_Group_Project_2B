@@ -10,6 +10,7 @@ from lmfit import Model, Parameters
 import lmfit
 import inspect
 import pandas as pd
+import mtalg
 
 rng = np.random.default_rng()
 def exp1(t,tau):
@@ -224,7 +225,7 @@ def phasor_solve(w,phasor,n=2,num = False,guess=None):
 
 class Simulation():
     def __init__(self,amp,tau, run_time=20*60, irfwidth=1e-3,
-                 n_bins = 380, window = 20, bg = 10, t0 = 10/19):
+                 n_bins = 380, window = 20, bg = 10, t0 = 10/19,MC=False):
         self.amp = amp/np.sum(amp)            #normalized amplitudes array
         self.tau = tau            #lifetimes array (in ns)
         self.run_time = run_time  #data collection time (in s), default =20*60 s
@@ -236,8 +237,11 @@ class Simulation():
         self.t = np.linspace(0,window,n_bins+1)[:-1] #time array in ns
         self.dt = window/n_bins
         self.ker = kernel(self.t,t0,irfwidth) #gaussian kernel
+        self.count_rate = 2500    #photon count rate /per s
+        self.n_photon = self.run_time*(2500-self.bg) #number of photons
+
         self.MC_exp()
-        t,self.y_arr = self.MC_exp_hist(multi = False) #arrays of mono-exp decays
+        #t,self.y_arr = self.MC_exp_hist(multi = False) #arrays of mono-exp decays
         t,self.y = self.MC_exp_hist(multi = True)      #array of multi-exponential decays
         t,self.y2 = self.multi_exp_data()              #array of multi-exponential decays
         #store angular frequency and correspnding fourier transform of self.y 
@@ -282,13 +286,10 @@ class Simulation():
         # we do our measurements at 2500 counts per second
         # calculate how many fluorescence counts per second this corresponds to
         # i.e. subtract background from total counts
-        fluorate = 2500 - self.bg
-        # calculate total number of fluorescence photons counted in measurement
-        totalfluorescence = fluorate * acquisitiontime
         # now scale the multiexponential decay so it contains this many counts
-        noiseless = totalfluorescence * Iconvol / np.sum(Iconvol)
+        noiseless = self.n_photon * Iconvol / np.sum(Iconvol)
         # and add on 'bg' counts per second spread evenly across all bins
-        noiseless = noiseless + (self.bg * acquisitiontime /self.n_bins)
+        noiseless = noiseless + (self.bg * self.run_time /self.n_bins)
         # finally add Poisson noise to each bin
         self.y2 = rng.poisson(noiseless)
 
@@ -297,7 +298,7 @@ class Simulation():
 
         return self.t,self.y2
 
-    def MC_exp(self, multi = False):
+    def MC_exp(self, multi = True):
         '''If multi == False:
             Generate n_tau mono-exponetial decay curves for an array of lifetimes (n_tau) 
             using Monte Carlo method
@@ -311,20 +312,25 @@ class Simulation():
            If multi == true, generate one multi-exponential decay curves (sum A_i exp(-t/tau_i)'''
         #IRF properties
         t0 = self.t0 # ns, offset
-        n_photon = self.run_time*(2500-self.bg) #no. of photon collected, 2500 photons per s
-        n_arr = np.ones(n_photon) #array for meshgrid
+        self.n_photon = self.run_time*(2500-self.bg) #no. of photon collected, 2500 photons per s
+        n_arr = np.ones(self.n_photon) #array for meshgrid
         N_arr, Tau = np.meshgrid(n_arr,self.tau)
         #set to default value if not provided
         
         #Generate time for each photon, sum of normal distribution (IRF) and exponential distribution (decay)
-        if True:
+        if multi == False:
             self.t_tot_2D = rng.normal(t0,self.irfwidth,size = np.shape(Tau)) + rng.exponential(Tau)
-        if True:
+        else:
             # generate an array of n_photon lifetime with weighted probability using amplitude
             # note that normalized exponential probability density function (pdf) is tau*exp(-t/tau)
             # the weighting of exp pdf of different tau becomes: A_i*tau_i, A_i is the amplitude of decay
-            tau_arr = rng.choice(self.tau,len(n_arr),p = self.amp*self.tau/np.sum(self.amp*self.tau))
-            self.t_tot = rng.normal(t0,self.irfwidth,size = np.shape(tau_arr)) + rng.exponential(tau_arr)
+            tau_arr = np.zeros(self.n_photon)
+            p = mtalg.random.uniform(low = 0, high = 1, size = self.n_photon) #array of numbers drawn from uniform probability distribution
+            pmf = self.amp*self.tau/np.sum(self.amp*self.tau)  #probability mass function
+            cdf = [0]+list(np.cumsum(pmf)) #cumulative distribution function with 0 at front
+            for i in range(1,len(cdf)):
+                tau_arr[(p<cdf[i])&(p>cdf[i-1])]= self.tau[i-1] # assign the life time to number within the corresponding cdf ranges
+            self.t_tot = mtalg.random.normal(t0,self.irfwidth,size = np.shape(tau_arr)) + mtalg.random.exponential(tau_arr)
         if multi == True:
             return self.t_tot
         else:
@@ -379,7 +385,7 @@ class Simulation():
     bg = None, run_time = None,ax=None,weights=None,method = 'cobyla'):
         #set default values from object attributes unless specified
         if y is None:
-            y = self.y #photon count
+            y = self.y2 #photon count
         guess = guess or list(self.amp[:-1])+self.tau #initial guess for fit
         end = end or int((self.n_bins*3/4)) #end index
         bg = bg or self.bg
@@ -394,7 +400,7 @@ class Simulation():
             ax.set_xlabel('time/ns')
             
 
-    def phasor_fft(self,MC=True,multi = True,n_bins = None, window = None):
+    def phasor_fft(self,MC=False,multi = True,n_bins = None, window = None):
         '''Generate phasor of multi-exponetial decay curves for an array of lifetimes (n_tau) with corresponding amplitudes
         Photon count rate is 2500 per s
         Input:  amp (1d array of amplitudes of each lifetime component)
@@ -407,14 +413,12 @@ class Simulation():
         #set default values unless specified
         n_bins = n_bins or self.n_bins
         window = window or self.window 
-        self.bins, self.y = self.MC_exp_hist(multi = multi,n_bins=n_bins) #call this function to update y,y_arr
-        
         if MC == False:
             y = self.y2
         else:
             y = self.y
-        ker = kernel(self.bins)
-        self.w, self.phasor = phasor_fft(y,ker,self.window/len(self.bins))
+        ker = kernel(self.t)
+        self.w, self.phasor = phasor_fft(y,ker,self.window/len(self.t))
         return self.w, self.phasor
 
     def repeat_sim(self,n_repeat,MC = False, multi = True):
