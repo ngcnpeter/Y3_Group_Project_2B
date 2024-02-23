@@ -312,7 +312,6 @@ class Simulation():
            If multi == true, generate one multi-exponential decay curves (sum A_i exp(-t/tau_i)'''
         #IRF properties
         t0 = self.t0 # ns, offset
-        self.n_photon = self.run_time*(2500-self.bg) #no. of photon collected, 2500 photons per s
         n_arr = np.ones(self.n_photon) #array for meshgrid
         N_arr, Tau = np.meshgrid(n_arr,self.tau)
         #set to default value if not provided
