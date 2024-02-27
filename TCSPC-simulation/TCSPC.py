@@ -223,6 +223,18 @@ def phasor_solve(w,phasor,n=2,num = False,guess=None):
         solution = {str(k):float(v) for k,v in solution.items()} #convert symbols to string
     return solution
 
+def phasor_eq_func(A_tau_arr,phasor):
+    y  = exp2(EGFP.t,A_tau_arr[0],*A_tau_arr[1:])
+    y = np.convolve(y,EGFP.ker,'full')[:EGFP.n_bins]/np.sum(EGFP.ker)
+    w,phasor_test = EGFP.phasor_fft(y=y)
+    return phasor_test.real[:3]-phasor.real[:3]
+
+def phasor_solve_num(phasor,x0):
+    '''Solve for amplitude and lifetimes numerically using 3 phasors for 3 parameters (A1, tau1, tau2)
+       phasor      phasor array (Simulation().phasor) to be resolved
+       x0          initial guess for a_tau_arr'''
+    return fsolve(phasor_eq_func,x0=x0,args = phasor)
+
 class Simulation():
     def __init__(self,amp,tau, run_time=20*60, irfwidth=1e-3,
                  n_bins = 380, window = 20, bg = 10, t0 = 10/19,MC=False):
@@ -399,7 +411,7 @@ class Simulation():
             ax.set_xlabel('time/ns')
             
 
-    def phasor_fft(self,MC=False,multi = True,n_bins = None, window = None):
+    def phasor_fft(self,y=None,MC=False,multi = True,n_bins = None, window = None):
         '''Generate phasor of multi-exponetial decay curves for an array of lifetimes (n_tau) with corresponding amplitudes
         Photon count rate is 2500 per s
         Input:  amp (1d array of amplitudes of each lifetime component)
@@ -412,10 +424,11 @@ class Simulation():
         #set default values unless specified
         n_bins = n_bins or self.n_bins
         window = window or self.window 
-        if MC == False:
-            y = self.y2
-        else:
-            y = self.y
+        if y is None:
+            if MC == False:
+                y = self.y2
+            else:
+                y = self.y
         ker = kernel(self.t)
         self.w, self.phasor = phasor_fft(y,ker,self.window/len(self.t))
         return self.w, self.phasor
@@ -539,6 +552,10 @@ class Phasor(Simulation):
             sol.update(phasor_dict)# append dictionary
             self.df = pd.concat([self.df,pd.DataFrame(sol, index=[i])]) #concatenate the results into 1 dataframe
         return self.df
+
+    def phasor_num():
+        '''Output numerically determined Amplitude A1 and lifetimes tau1 tau2'''
+        return phasor_solve_num(self.phasor,[self.amp[0],*self.tau])
 
 
 
