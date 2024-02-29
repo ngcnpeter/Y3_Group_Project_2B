@@ -72,7 +72,7 @@ def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20
     fit_report = result.fit_report()
     return result, params_opt, chi2_red, fit_report
 
-def fit_df(results):
+def fit_df(results,par_col = ['_val','init_value','stderr','correl']):
     '''Generates an info_df and par_df to store fitted parameters and chi2
        Input:
        results    list of lmfit ModelResult objects 
@@ -81,7 +81,6 @@ def fit_df(results):
        '''
     
     # Extract the information from the result objects
-    par_col = ['_val','init_value','stderr','correl'] #column names for parameter dataframe
     attribute_names = ['chisqr', 'redchi'] + par_col
     info_dict = {attribute_name: [] for attribute_name in attribute_names}
     par_list = []
@@ -91,14 +90,16 @@ def fit_df(results):
         #create data frame storing parameters
         par_df_new = pd.concat({k: pd.Series(vars(v)).T for k, v in result.params.items()}, axis=1) #parameter attributes in pd.DataFrame
         par_df_new = par_df_new.loc[par_col] #select value, initial value, error, and correlation 
-        par_df_new.loc['correl'] = [{k : f'{float(v):.3g}' for k,v in pair.items() }for pair in  par_df_new.loc['correl'].values] #round correlations
+        if 'correl' in par_col:
+            par_df_new.loc['correl'] = [{k : f'{float(v):.3g}' for k,v in pair.items() }for pair in  par_df_new.loc['correl'].values] #round correlations
         #append the new df to exisiting df
         par_list.append(par_df_new)
         info_dict['chisqr'].append(result.chisqr) #chi2
         info_dict['redchi'].append(result.redchi) #reduced chi2
         for col in par_col[:-1]:
             info_dict[col].append([f'{v:.3g}' for v in par_df_new.T[col].values]) #store as list in this data frame
-        info_dict['correl'].append(par_df_new.T['correl'].values) #correlation dictionary
+        if 'correl' in par_col:
+            info_dict['correl'].append(par_df_new.T['correl'].values) #correlation dictionary
     info_df = pd.DataFrame(info_dict) 
     par_df = pd.concat(par_list,keys = range(len(par_list)))
     return info_df, par_df
@@ -437,7 +438,7 @@ class Simulation():
             self.sim_data[i] = y             #store simulated data
         self.w, self.phasor_data = phasor_fft(self.sim_data,self.ker,self.dt) #transform stored data to phasor
     
-    def repeat_sim_results(self,sim_data = None,method='cobyla'):
+    def repeat_sim_results(self,sim_data = None,method='cobyla',par_col = ['_val','init_value','stderr','correl']):
         '''store the results of fit of repeated simulation in info_df, par_df and val_df'''
         self.fit_results = [] #empty list to store lmfit ModelResult objects
         #default sim_data list as self.sim_Data
@@ -447,7 +448,7 @@ class Simulation():
             weights = np.sqrt(y)[np.argmax(y):int((15/20*self.n_bins))]
             self.fit(exp2,y,[self.amp[0]]+self.tau,weights = weights,method = method) 
             self.fit_results.append(self.fit_result)
-        self.info_df, self.par_df = fit_df(self.fit_results)
+        self.info_df, self.par_df = fit_df(self.fit_results,par_col=par_col)
         self.val_df = self.par_df.loc[(slice(0,99),'_val'),:] #df for values only
 
 
