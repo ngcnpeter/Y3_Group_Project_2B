@@ -538,7 +538,7 @@ class Phasor(Simulation):
         if phasor_data is None:
             phasor_data = self.phasor_data
         self.df = pd.DataFrame()
-        for i in range(len(self.phasor_data)):
+        for i in range(len(phasor_data)):
             # sol = self.phasor_solve(w,phasor_data[i],num = num, guess = list((self.amp*self.tau)/np.sum(self.amp*self.tau))+self.tau) #solution
             # sol = {k:v for k,v in zip(['A1','A2','t1','t2'],sol)} #convert solution to dict 
             sol = {k:v for k,v in zip(['A1','t1','t2'],self.phasor_num(phasor_data[i]))} #solution
