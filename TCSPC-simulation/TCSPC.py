@@ -13,6 +13,7 @@ import pandas as pd
 import mtalg
 from scipy.optimize import fsolve
 import matplotlib.cm as cm
+import matplotlib as mpl
 
 rng = np.random.default_rng()
 def exp1(t,tau):
@@ -105,6 +106,31 @@ def fit_df(results,par_col = ['_val','init_value','stderr','correl']):
     par_df = pd.concat(par_list,keys = range(len(par_list)))
     return info_df, par_df
 
+def plot_fit(result):
+    '''Plot data and fitted line, with normalized residuals in another plot.
+       Input:
+       ModelResult object from lmfit (after fitting)
+       Output:
+       figure and axes objects'''
+    fig,ax = plt.subplots(nrows = 2, ncols =1,figsize = (6,6),gridspec_kw = {'height_ratios':[4,1]},sharex = True)
+    result.plot_fit(ax=ax[0],datafmt = 'x',data_kws = {'alpha':0.7,'zorder':1})
+    xdata = ax[0].lines[0].get_xdata() #xdata array for plotting residuals
+    #Normalized residuals
+    ax[1].set_ylabel('Normalized residuals')
+    ax[1].plot(xdata,result.residual,'x')
+    ax[1].axhline(0,c='k')
+    ax[1].add_patch(mpl.patches.Rectangle((0,-1),xdata[-1],2,alpha = 0.3,color='g'))
+    ax[1].set_yticks([-2,-1,0,1,2])
+    for i in range(2):
+        ax[i].set_xlim([0,xdata[-1]])
+    ax[0].set_ylabel('Rescaled number of photons')
+    ax[1].set_xlabel('Time/ns')
+    ax[0].set_xlabel('')
+    ax[0].set_yscale('log')
+    for i in range(3):
+        ax[0].text(10.5,np.logspace(-0.5,-0.85,4)[i],[v.name + rf' = {v.value:0.2f} $\pm$ {v.stderr:0.2f}' for v in result.params.values()][i])
+    ax[0].text(10.5,np.logspace(-0.5,-0.85,4)[3],rf'reduced $\chi^2$ = {result.redchi:0.2f}')
+    return fig,ax
 
 def deconv_fft(signal,kernel):
     '''Deconvolve decay data with IRF kernel using FFT
