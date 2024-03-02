@@ -62,8 +62,9 @@ def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20
     max_idx = np.argmax(ydata) #index of data point with maximum photon count N(0)
     tdata = tdata[:end-max_idx] #start from t = 0
     ydata = ydata[max_idx:end]  #start from max.
+    yerr = ydata/ydata[0]*np.sqrt(1/ydata+1/ydata[0]) #error after scaling
     ydata = ydata/ydata[0] # scale y data such that the beginning is 1 
-
+    weights = 1/yerr #weighted by 1/yerr, yerr is error after scaling ydata
     
     result = model.fit(ydata, params, t=tdata,weights = weights,method = method) #perform least squares fit
     params_opt = result.params #optimized params
@@ -384,7 +385,7 @@ class Simulation():
         
         ax.legend()
     def fit(self,func,y = None,plot = False,guess = None,end = None, 
-    bg = None, run_time = None,ax=None,weights=None,method = 'cobyla'):
+            bg = None, run_time = None,ax=None,weights=None,method = 'cobyla'):
         #set default values from object attributes unless specified
         if y is None:
             y = self.y2 #photon count
@@ -438,14 +439,13 @@ class Simulation():
             self.sim_data[i] = y             #store simulated data
         self.w, self.phasor_data = phasor_fft(self.sim_data,self.ker,self.dt) #transform stored data to phasor
     
-    def repeat_sim_results(self,sim_data = None,method='cobyla',par_col = ['_val','init_value','stderr','correl']):
+    def repeat_sim_results(self,sim_data = None,weights = None,method='cobyla',par_col = ['_val','init_value','stderr','correl']):
         '''store the results of fit of repeated simulation in info_df, par_df and val_df'''
         self.fit_results = [] #empty list to store lmfit ModelResult objects
         #default sim_data list as self.sim_Data
         if sim_data is None:
             sim_data = self.sim_data
         for y in sim_data:
-            weights = np.sqrt(y)[np.argmax(y):int((15/20*self.n_bins))]
             self.fit(exp2,y,[self.amp[0]]+self.tau,weights = weights,method = method) 
             self.fit_results.append(self.fit_result)
         self.info_df, self.par_df = fit_df(self.fit_results,par_col=par_col)
