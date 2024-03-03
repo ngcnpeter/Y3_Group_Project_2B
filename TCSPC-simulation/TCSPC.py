@@ -467,7 +467,8 @@ class Simulation():
                 self.MC_exp(multi = multi) #default multi-exponential
                 bins,y = self.MC_exp_hist()
             self.sim_data[i] = y             #store simulated data
-        self.w, self.phasor_data = phasor_fft(self.sim_data,self.ker,self.dt) #transform stored data to phasor
+        #background  needs to be removed before phasor transformation
+        self.w, self.phasor_data = phasor_fft(self.sim_data-self.bg*self.run_time/self.n_bins,self.ker,self.dt) #transform stored data to phasor
     
     def repeat_sim_results(self,sim_data = None,weights = None,method='tnc',end = None, 
             bg = None,guess=None,par_col = ['_val','init_value','stderr','correl']):
@@ -476,23 +477,24 @@ class Simulation():
         #default sim_data list as self.sim_Data
         if sim_data is None:
             sim_data = self.sim_data
-            for n in range(len(sim_data)):
-                y = sim_data[n]
-                #try until no runtime warning
-                while True:
-                    warnings.filterwarnings("error", category=RuntimeWarning) #treat RuntimeWarning as error
-                    try:
-                        self.fit(exp2,y,[self.amp[0]]+self.tau,weights = weights,method = method,end=end,bg=bg) 
-                        #check if stderr has None values (invalid fit) and raise RuntimeWarning to execute except
-                        if [v.stderr for v in self.par.values()][0] is None:
-                            raise RuntimeWarning
-                        break
-                    #if RuntimeWarning is raised,regenerate data
-                    except:
-                        self.multi_exp_data()
-                        y = self.y2
-                        sim_data[n]=y
-                self.fit_results.append(self.fit_result)
+        for n in range(len(sim_data)):
+            y = sim_data[n]
+            #try until no runtime warning
+            while True:
+                warnings.filterwarnings("error", category=RuntimeWarning) #treat RuntimeWarning as error
+                try:
+                    self.fit(exp2,y,[self.amp[0]]+self.tau,weights = weights,method = method,end=end,bg=bg) 
+                    #check if stderr has None values (invalid fit) and raise RuntimeWarning to execute except
+                    if [v.stderr for v in self.par.values()][0] is None:
+                        raise RuntimeWarning
+                    break
+                #if RuntimeWarning is raised,regenerate data
+                except:
+                    self.multi_exp_data()
+                    y = self.y2
+                    sim_data[n]=y
+            self.fit_results.append(self.fit_result)
+        warnings.resetwarnings()
         self.info_df, self.par_df = fit_df(self.fit_results,par_col=par_col)
         self.val_df = self.par_df.loc[(slice(0,99),'_val'),:] #df for values only
 
@@ -587,9 +589,9 @@ class Phasor(Simulation):
         for i in range(len(phasor_data)):
             # sol = self.phasor_solve(w,phasor_data[i],num = num, guess = list((self.amp*self.tau)/np.sum(self.amp*self.tau))+self.tau) #solution
             # sol = {k:v for k,v in zip(['A1','A2','t1','t2'],sol)} #convert solution to dict 
-            sol = {k:v for k,v in zip(['A1','t1','t2'],self.phasor_num(phasor_data[i]))} #solution
-            phasor_dict = {str(round(self.w[n]/np.pi/2,2)):phasor_data[i,n]for n in range(1,4)} #record the phasor positions
-            sol.update(phasor_dict)# append dictionary
+            sol = {k:v for k,v in zip(['A1','tau1','tau2'],self.phasor_num(phasor_data[i]))} #solution
+            #phasor_dict = {str(round(self.w[n]/np.pi/2,2)):phasor_data[i,n]for n in range(1,4)} #record the phasor positions
+            #sol.update(phasor_dict)# append dictionary
             self.df = pd.concat([self.df,pd.DataFrame(sol, index=[i])]) #concatenate the results into 1 dataframe
         return self.df
 
