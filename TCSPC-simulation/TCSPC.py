@@ -14,6 +14,7 @@ import mtalg
 from scipy.optimize import fsolve
 import matplotlib.cm as cm
 import matplotlib as mpl
+import warnings
 
 rng = np.random.default_rng()
 def exp1(t,tau):
@@ -128,8 +129,8 @@ def plot_fit(result):
     ax[0].set_xlabel('')
     ax[0].set_yscale('log')
     for i in range(3):
-        ax[0].text(10.5,np.logspace(-0.5,-0.85,4)[i],[v.name + rf' = {v.value:0.2f} $\pm$ {v.stderr:0.2f}' for v in result.params.values()][i])
-    ax[0].text(10.5,np.logspace(-0.5,-0.85,4)[3],rf'reduced $\chi^2$ = {result.redchi:0.2f}')
+        ax[0].text(xdata[-1]*0.7,np.logspace(-0.5,-0.85,4)[i],[v.name + rf' = {v.value:0.3f} $\pm$ {v.stderr:0.3f}' for v in result.params.values()][i])
+    ax[0].text(xdata[-1]*0.7,np.logspace(-0.5,-0.85,4)[3],rf'reduced $\chi^2$ = {result.redchi:0.3f}')
     return fig,ax
 
 def deconv_fft(signal,kernel):
@@ -258,7 +259,6 @@ class Simulation():
                  n_bins = 380, window = 20, bg = 10, t0 = 10/19,MC=False):
         self.amp = amp/np.sum(amp)            #normalized amplitudes array
         self.tau = tau            #lifetimes array (in ns)
-        self.run_time = run_time  #data collection time (in s), default =20*60 s
         self.irfwidth = irfwidth  #sigma of Gaussian IRF (in ns), default = 1e-3 ns
         self.n_bins = n_bins      #no. of histogram bins, default = 380
         self.window = window      #decay data time window, ns, default =20
@@ -268,7 +268,7 @@ class Simulation():
         self.dt = window/n_bins
         self.ker = kernel(self.t,t0,irfwidth) #gaussian kernel
         self.count_rate = 2500    #photon count rate /per s
-        self.n_photon = self.run_time*(2500-self.bg) #number of photons
+        self.n_photon = run_time*(self.count_rate-self.bg) #number of photons
 
         self.MC_exp()
         #t,self.y_arr = self.MC_exp_hist(multi = False) #arrays of mono-exp decays
@@ -280,6 +280,10 @@ class Simulation():
         #store photon count data  of 100 simulationsin self.sim_data 
         # and corresponding phasor data in self.phasor_data
         self.repeat_sim(100)
+    
+    @property
+    def run_time(self):
+        return self.n_photon/(self.count_rate-self.bg)
 
     
 
@@ -319,7 +323,7 @@ class Simulation():
         # now scale the multiexponential decay so it contains this many counts
         noiseless = self.n_photon * Iconvol / np.sum(Iconvol)
         # and add on 'bg' counts per second spread evenly across all bins
-        noiseless = noiseless + (self.bg * self.run_time /self.n_bins)
+        noiseless = noiseless + (self.bg * self.run_time/self.n_bins)
         # finally add Poisson noise to each bin
         self.y2 = rng.poisson(noiseless)
 
@@ -465,15 +469,30 @@ class Simulation():
             self.sim_data[i] = y             #store simulated data
         self.w, self.phasor_data = phasor_fft(self.sim_data,self.ker,self.dt) #transform stored data to phasor
     
-    def repeat_sim_results(self,sim_data = None,weights = None,method='cobyla',par_col = ['_val','init_value','stderr','correl']):
+    def repeat_sim_results(self,sim_data = None,weights = None,method='cobyla',end = None, 
+            bg = None,guess=None,par_col = ['_val','init_value','stderr','correl']):
         '''store the results of fit of repeated simulation in info_df, par_df and val_df'''
         self.fit_results = [] #empty list to store lmfit ModelResult objects
         #default sim_data list as self.sim_Data
         if sim_data is None:
             sim_data = self.sim_data
-        for y in sim_data:
-            self.fit(exp2,y,[self.amp[0]]+self.tau,weights = weights,method = method) 
-            self.fit_results.append(self.fit_result)
+            for n in range(len(sim_data)):
+                y = sim_data[n]
+                #try until no runtime warning
+                while True:
+                    warnings.filterwarnings("error", category=RuntimeWarning) #treat RuntimeWarning as error
+                    try:
+                        self.fit(exp2,y,[self.amp[0]]+self.tau,weights = weights,method = method,end=end,bg=bg) 
+                        #check if stderr has None values (invalid fit) and raise RuntimeWarning to execute except
+                        if [v.stderr for v in self.par.values()][0] is None:
+                            raise RuntimeWarning
+                        break
+                    #if RuntimeWarning is raised,regenerate data
+                    except:
+                        self.multi_exp_data()
+                        y = self.y2
+                        sim_data[n]=y
+                self.fit_results.append(self.fit_result)
         self.info_df, self.par_df = fit_df(self.fit_results,par_col=par_col)
         self.val_df = self.par_df.loc[(slice(0,99),'_val'),:] #df for values only
 
