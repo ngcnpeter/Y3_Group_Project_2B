@@ -32,7 +32,7 @@ def exp2(t,A1,tau1,tau2):
     '''
     return A1*np.exp(-t/tau1)+(1-A1)*np.exp(-t/tau2)
 
-def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20*60,weights = None,method = 'tnc'):
+def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20*60,weights = None,method = 'powell'):
     '''use least-square fit for given exponential function (exp1 or exp2)
        Inputs:
        func      exp function to be fitted 
@@ -415,7 +415,7 @@ class Simulation():
         
         ax.legend()
     def fit(self,func,y = None,plot = False,guess = None,end = None, 
-            bg = None, run_time = None,ax=None,weights=None,method = 'tnc'):
+            bg = None, run_time = None,ax=None,weights=None,method = 'powell'):
         #set default values from object attributes unless specified
         if y is None:
             y = self.y2 #photon count
@@ -470,7 +470,7 @@ class Simulation():
         #background  needs to be removed before phasor transformation
         self.w, self.phasor_data = phasor_fft(self.sim_data-self.bg*self.run_time/self.n_bins,self.ker,self.dt) #transform stored data to phasor
     
-    def repeat_sim_results(self,sim_data = None,weights = None,method='tnc',end = None, 
+    def repeat_sim_results(self,sim_data = None,weights = None,method='powell',end = None, 
             bg = None,guess=None,par_col = ['_val','init_value','stderr','correl']):
         '''store the results of fit of repeated simulation in info_df, par_df and val_df'''
         self.fit_results = [] #empty list to store lmfit ModelResult objects
