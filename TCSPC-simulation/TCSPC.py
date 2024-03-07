@@ -589,13 +589,27 @@ class Phasor(Simulation):
         for i in range(len(phasor_data)):
             # sol = self.phasor_solve(w,phasor_data[i],num = num, guess = list((self.amp*self.tau)/np.sum(self.amp*self.tau))+self.tau) #solution
             # sol = {k:v for k,v in zip(['A1','A2','t1','t2'],sol)} #convert solution to dict 
-            sol = {k:v for k,v in zip(['A1','tau1','tau2'],self.phasor_num(phasor_data[i]))} #solution
+            sol = {k:v for k,v in zip(['A1','tau1','tau2'],self.phasor_solve_num(phasor_data[i]))} #solution
             #phasor_dict = {str(round(self.w[n]/np.pi/2,2)):phasor_data[i,n]for n in range(1,4)} #record the phasor positions
             #sol.update(phasor_dict)# append dictionary
             self.df = pd.concat([self.df,pd.DataFrame(sol, index=[i])]) #concatenate the results into 1 dataframe
         return self.df
 
     def phasor_eq_func(self,A_tau_arr,phasor):
+        '''Function to be passed to phasor_solve_num to solve for A_tau array (A1, tau1, tau2)
+        Input: 
+        A_tau_arr    parameter array A1 tau1, tau2
+        phasor       phasor array from Simulation().phasor to be resolved '''
+        n = int((len(A_tau_arr)+1)/2) #number of components
+        # A_tau_arr = np.insert(A_tau_arr,n-1,1-np.sum(A_tau_arr[:n-1])) #insert An
+        y  = sum([A_tau_arr[j] * np.exp(-self.t / A_tau_arr[j+n]) for j in range(n-1)]) #pure multiexponential
+        y+= (1-np.sum(A_tau_arr[:n-1]))*np.exp(-self.t / A_tau_arr[-1])
+        y = np.convolve(y,self.ker,'full')[:self.n_bins]/np.sum(self.ker)
+        w,phasor_test = self.phasor_fft(y=y) 
+        phasor_compare = phasor_test.real[1:2*n]-phasor.real[1:2*n] #solve for A_tau_arr such that it gives 0
+        return phasor_compare #
+
+    def phasor_eq_func_A_vary(self,A_tau_arr,phasor):
         '''Function to be passed to phasor_solve_num to solve for A_tau array (A1,A2, tau1, tau2)
         Input: 
         A_tau_arr    parameter array A1,A2 tau1, tau2
@@ -604,7 +618,7 @@ class Phasor(Simulation):
         y  = sum([A_tau_arr[j] * np.exp(-self.t / A_tau_arr[j+n]) for j in range(n)]) #pure multiexponential
         y = np.convolve(y,self.ker,'full')[:self.n_bins]/np.sum(self.ker)
         w,phasor_test = self.phasor_fft(y=y) 
-        A_sum = 1-np.sum(A_tau_arr[:n]) #A1,...An sum to 1, this variable gives 0
+        A_sum = 1-np.sum(A_tau_arr[:n]) #A1,...An sum to 1
         phasor_compare = phasor_test.real[1:2*n]-phasor.real[1:2*n] #solve for A_tau_arr such that it gives 0
         return [A_sum]+list(phasor_compare) #
 
@@ -615,7 +629,7 @@ class Phasor(Simulation):
         if phasor is None:
             phasor = self.phasor
         if x0 is None:
-            x0 = list(self.amp)+self.tau
+            x0 = np.concatenate([self.amp[:-1],self.tau])
         return fsolve(self.phasor_eq_func,x0=x0,args = phasor)
 
 
