@@ -606,7 +606,7 @@ class Phasor(Simulation):
         y+= (1-np.sum(A_tau_arr[:n-1]))*np.exp(-self.t / A_tau_arr[-1])
         y = np.convolve(y,self.ker,'full')[:self.n_bins]/np.sum(self.ker)
         w,phasor_test = self.phasor_fft(y=y) 
-        return phasor_test.real[:2*n-1]-phasor.real[:2*n-1]
+        return phasor_test.real[:2*n-1]-phasor.real[:2*n-1] #select 1st-2n-1th harmonics
 
     def phasor_eq_func2(self,A_tau_arr,phasor):
         '''Function to be passed to phasor_solve_num to solve for A_tau array (A1, tau1, tau2)
