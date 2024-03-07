@@ -596,16 +596,27 @@ class Phasor(Simulation):
         return self.df
 
     def phasor_eq_func(self,A_tau_arr,phasor):
-        y  = exp2(self.t,A_tau_arr[0],*A_tau_arr[1:])
+        '''Function to be passed to phasor_solve_num to solve for A_tau array (A1,A2, tau1, tau2)
+        Input: 
+        A_tau_arr    parameter array A1,A2 tau1, tau2
+        phasor       phasor array from Simulation().phasor to be resolved '''
+        n = int(len(A_tau_arr)/2) #number of components
+        y  = sum([A_tau_arr[j] * np.exp(-self.t / A_tau_arr[j+n]) for j in range(n)]) #pure multiexponential
         y = np.convolve(y,self.ker,'full')[:self.n_bins]/np.sum(self.ker)
-        w,phasor_test = self.phasor_fft(y=y)
-        return phasor_test.real[:3]-phasor.real[:3]
-        
-    def phasor_num(self,phasor=None):
-        '''Output numerically determined Amplitude A1 and lifetimes tau1 tau2'''
+        w,phasor_test = self.phasor_fft(y=y) 
+        A_sum = 1-np.sum(A_tau_arr[:n]) #A1,...An sum to 1, this variable gives 0
+        phasor_compare = phasor_test.real[1:2*n]-phasor.real[1:2*n] #solve for A_tau_arr such that it gives 0
+        return [A_sum]+list(phasor_compare) #
+
+    def phasor_solve_num(self,phasor=None,x0=None):
+        '''Solve for amplitude and lifetimes numerically using 3 phasors for 3 parameters (A1, tau1, tau2)
+        phasor      phasor array (Simulation().phasor) to be resolved
+        x0          initial guess for a_tau_arr'''
         if phasor is None:
             phasor = self.phasor
-        return fsolve(self.phasor_eq_func,x0=[self.amp[0],*self.tau],args =phasor)
+        if x0 is None:
+            x0 = list(self.amp)+self.tau
+        return fsolve(self.phasor_eq_func,x0=x0,args = phasor)
 
 
 
