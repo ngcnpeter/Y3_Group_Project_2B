@@ -46,13 +46,13 @@ The `TCSPC.py` module contains the `Simulation` and `Phasor` classes utilized ac
 ## Usage
 
 To run the notebooks and utilize the Python module, follow these steps:
-https://github.com/ngcnpeter/Y3_Group_Project_2B.git`
+1. Go to https://github.com/ngcnpeter/Y3_Group_Project_2B.git`
 2. Install the required dependencies: `pip install -r requirements.txt`
 3. Open the desired Jupyter notebook in your Jupyter environment and execute the cells.
 4. Make use of the provided notebook functionalities and the functionalities provided by the `TCSPC` module.
 
-## Usage
 
+Here are some examples:
 1. Import the required functions from `TCSPC.py` into your Python script:
 
 ```python
