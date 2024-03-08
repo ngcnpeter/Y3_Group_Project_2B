@@ -31,7 +31,7 @@ This repository contains Jupyter notebooks and a Python module for the analysis 
 ## Notebooks
 
 1. [phasor.ipynb](https://github.com/ngcnpeter/Y3_Group_Project_2B/blob/main/TCSPC-simulation/phasor.ipynb): Investigates the effect of noise and blind decomposition of phasor to obtain fluorescence decay parameters.
-2. [2Bsimulation.ipynb](https://github.com/ngcnpeter/Y3_Group_Project_2B/blob/main/TCSPC-simulation/2Bsimulation.ipynb: Explores different methods to simulate fluorescence decay, including introducing Poisson noise and Monte Carlo simulation.
+2. [2Bsimulation.ipynb](https://github.com/ngcnpeter/Y3_Group_Project_2B/blob/main/TCSPC-simulation/2Bsimulation.ipynb): Explores different methods to simulate fluorescence decay, including introducing Poisson noise and Monte Carlo simulation.
 3. [interim_report.ipynb](https://github.com/ngcnpeter/Y3_Group_Project_2B/blob/main/TCSPC-simulation/interim_report_ipynb): Provides a temporary comparison of fitting and phasor methods of analysis to fluorescence decay data.
 4. [Comparing by critical lifetime ratio (PHASOR part) (1).ipynb](https://github.com/ngcnpeter/Y3_Group_Project_2B/blob/main/TCSPC-simulation/comparing_by_critical_lifetime_ratio_ipynb): Compares separability and ability of the phasor method to resolve close lifetime components in fluorescence decay.
 5. [τseparation.ipynb](https://github.com/ngcnpeter/Y3_Group_Project_2B/blob/main/TCSPC-simulation/tau_separation_ipynb): Compares different fitting methods for the separation of lifetimes in fluorescence decay.
