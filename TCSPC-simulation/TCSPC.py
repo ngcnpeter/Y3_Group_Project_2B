@@ -75,6 +75,31 @@ def exp_fit(func,tdata,ydata,guess,end = int((15/20*380)),bg = 10, run_time = 20
     fit_report = result.fit_report()
     return result, params_opt, chi2_red, fit_report
 
+def poisson_deviance_residual(observed, expected):
+    residual=  np.sqrt(abs(2 *  (observed* np.log(observed/ expected) - (observed- expected)))) #residual array
+    return residual
+
+def residual(p, t, data):
+    v = p.valuesdict()
+    expected = v['c'] #constant background
+    M = 1
+    while f'A{M}' in v:
+        expected += exp(t, v[f'A{M}'], v[f'tau{M}']) #add exponential component
+        M += 1
+    return poisson_deviance_residual(data, expected) #lmfit.minimizer minimize the residual array in the sum of squared sense
+
+def initial_params(M,A_guess,tau_guess,rescale = True,bg_removed = True):
+    p = lmfit.Parameters()
+    if bg_removed ==False:
+        p.add_many(('c', 0, True, 0)) #constant background
+    for i in range(1,M+1): #for each component
+        p.add_many((f'A{i}', A_guess[i-1], True,0), #amplitude
+                   (f'tau{i}', tau_guess[i-1], True, 0)) #lifetime
+    if rescale == True:
+        p[f'A{M}'].set(expr = f'1 {"".join([f"- A{i}" for i in range(1,M)])}') #fix the amplitude of last component
+    return p
+
+
 def fit_df(results,par_col = ['_val','init_value','stderr','correl']):
     '''Generates an info_df and par_df to store fitted parameters and chi2
        Input:
