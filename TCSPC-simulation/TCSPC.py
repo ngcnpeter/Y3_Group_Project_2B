@@ -288,14 +288,87 @@ def repeat_sim_n(sim,n_photon_arr = np.logspace(4,9,20).astype(int),n_repeat = 1
     n_repeat       Number of repeats in simulation
     '''
     sim.y_list = np.zeros((len(n_photon_arr),n_repeat,380)) #array to store 100 simulations of time domain data for each n_photon
+    sim.y_bg_list= np.zeros((len(n_photon_arr),n_repeat,380))
     sim.phasor_list = np.zeros((len(n_photon_arr),n_repeat,380),dtype = complex) #array to store phasors from simulations of different n_photon
     sim.phasor_bg_list = np.zeros((len(n_photon_arr),n_repeat,380),dtype = complex) #with background
     for i in range(len(n_photon_arr)):
         sim.n_photon = n_photon_arr[i] #set n_photon
         sim.repeat_sim(n_repeat) #generate 100 simulations
-        sim.y_list[i] = sim.sim_data #store 100 decays
-        sim.phasor_list[i] = sim.phasor_data #store 100 phasors
+        sim.y_list[i] = sim.sim_data- sim.run_time*sim.bg/sim.n_bins#store 100 decays, no bg
+        sim.y_bg_list[i] = sim.sim_data  #store 100 decays, with bg
+        sim.phasor_list[i] = sim.phasor_data #store 100 phasors, no bg
         w,sim.phasor_bg_list[i] = sim.phasor_fft(sim.sim_data) #phasor with backhround
+
+def trim_rescale_data(tdata,ydata,r = 10,rescale = True):
+    '''Trim and rescale data (if rescale ==True)
+       tdata    EGFP.t
+       ydata    EGFP.y2 
+       r        select points with y>r*max(y)
+       rescale  True to rescale, False won't rescale'''
+     #select points >r counts only
+    ydata = ydata[ydata>r]
+    #trim away IRF
+    ydata = ydata[np.argmax(ydata):]
+    #set tdata to same length, start from t = 0
+    tdata = tdata[:len(ydata)]
+    if rescale == True:
+        yerr = ydata/ydata[0]*np.sqrt(1/ydata+1/ydata[0]) #error after scaling
+        ydata = ydata/ydata[0] # scale y data such that the beginning is 1 
+    else:
+        yerr = np.sqrt(ydata)
+    weights = 1/yerr #weighted by 1/yerr, yerr is error after scaling ydata
+    return tdata,ydata,weights
+
+def exp(t, A, tau):
+    return A * np.exp(-t/tau)
+
+def poisson_deviance_residual(observed, expected, weights):
+    '''Return Poisson deviance residual array for given observed data and expected (model) '''
+    residual=  np.sign(observed-expected)*np.sqrt(abs(2 *  (observed* np.log(observed/ expected) - (observed- expected)))) #residual array
+    return residual
+
+def LS_deviance_residual(observed, expected,weights):
+    return (observed-expected)*weights
+
+
+def residual(p, t, data, weights,resid_func = poisson_deviance_residual):
+    '''Return residual array for lmfit.minimizer to minimize in the sum of squares sense
+       Inputs:
+       p         lmfit.Parameters() object
+       t         time array (independent variable)
+       data      data array to be fitted
+       resid_func residual function to be used (return an array of residuals, default poisson_deviance_residual)'''
+    v = p.valuesdict() #obtain dictionary of parameter values
+    expected = 0
+    if 'c' in v:
+        expected = v['c'] #constant background
+    M = 1
+    while f'A{M}' in v:
+        expected += exp(t, v[f'A{M}'], v[f'tau{M}']) #add exponential component
+        M += 1
+    return resid_func(data, expected,weights) #lmfit.minimizer minimize the residual array in the sum of squared sense
+
+def initial_params(M,A_guess,tau_guess,c_guess = 0,rescale = True,bg_removed = False):
+    '''Create and return initial parameters of fit (lmfit.Parmaeters() object)
+       Input:
+       M          number of lifetime components
+       A_guess    np.array of A1,...AM amplitudes guess
+       tau_guess  np.array of tau1,...tauM lifetimes guess
+       c_guess    constant background offset guess
+       rescale    True if the ydata is rescaled
+       bg_removed True if bg is removed
+       '''
+    p = lmfit.Parameters()
+    if bg_removed == False:
+        p.add_many(('c', c_guess, True, 0)) #constant background
+    for i in range(1,M+1): #for each component
+        p.add_many((f'A{i}', A_guess[i-1], True,0)) #amplitude
+    for i in range(1,M+1):
+        p.add_many((f'tau{i}', tau_guess[i-1], True, 0)) #lifetime
+    if rescale == True:
+        p[f'A{M}'].set(expr = f'1 {"".join([f"- A{i}" for i in range(1,M)])}') #fix the amplitude of last component
+    return p
+
         
 class Simulation():
     def __init__(self,amp,tau, run_time=20*60, irfwidth=1e-3,
@@ -474,6 +547,29 @@ class Simulation():
             ax.set_yscale('log')
             ax.set_ylabel('Photon Count')
             ax.set_xlabel('time/ns')
+
+    def MLEfit(self,N,tdata,ydata,resid_func = poisson_deviance_residual,method ='powell',r=10,rescale=False,bg=True):
+        tdata, ydata, weights = trim_rescale_data(tdata,ydata, r=r, rescale=rescale)
+        p1 = initial_params(N, np.max(ydata)*self.amp, self.tau, rescale=rescale)
+        if bg == False: #background removed
+            p1['c'].set(value = 0,vary = False)
+        mi1 = lmfit.minimize(residual, p1, args=(tdata, ydata,weights,resid_func), method=method)
+        par_dict = {k:[v.value] for k,v in mi1.params.items()} #turn params values into dict
+        par_dict.update({'red_chi2':[mi1.redchi],'nfev':[mi1.nfev]}) #include reduced chi2 and nfev
+        A_sum = sum([par_dict[f'A{j}'][0] for j in range(1,N+1)]) #sum all An
+        for i in range(1,N+1):
+            par_dict[f'A{i}'][0]=par_dict[f'A{i}'][0]/A_sum #rescale An
+        return pd.DataFrame.from_dict(par_dict)
+
+    def val_df(self,N,resid_func = poisson_deviance_residual,method='powell',sim_data=None,r=10,rescale=False,bg=True):
+        '''Create dataframe of fitted parameters for 100 simulations'''
+        if sim_data is None:
+            sim_data = self.sim_data
+        df_list = []
+        for j in range(100):
+            df_list.append( self.MLEfit(N,self.t,sim_data[j],resid_func=resid_func,method=method,r=r,rescale=rescale,bg=bg))
+            self.mle_df= pd.concat(df_list).reset_index()
+        return self.mle_df.drop(['index'],axis =1)
             
 
     def phasor_fft(self,y=None,MC=False,multi = True,n_bins = None, window = None):
