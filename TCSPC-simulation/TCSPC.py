@@ -11,7 +11,7 @@ import lmfit
 import inspect
 import pandas as pd
 import mtalg
-from scipy.optimize import fsolve
+from scipy.optimize import fsolve,root
 import matplotlib.cm as cm
 import matplotlib as mpl
 import warnings
@@ -279,6 +279,24 @@ def phasor_solve(w,phasor,n=2,num = False,guess=None):
         solution = {str(k):float(v) for k,v in solution.items()} #convert symbols to string
     return solution
 
+def repeat_sim_n(sim,n_photon_arr = np.logspace(4,9,20).astype(int),n_repeat = 100):
+    '''Store results of simulations for Simulation object sim 
+    of n_photon in n_photon_arr (default  np.logspace(6,10,100).astype(int))
+    Input:
+    sim            Simulation Object
+    n_photon_arr   Number of photons (collected in total) array
+    n_repeat       Number of repeats in simulation
+    '''
+    sim.y_list = np.zeros((len(n_photon_arr),n_repeat,380)) #array to store 100 simulations of time domain data for each n_photon
+    sim.phasor_list = np.zeros((len(n_photon_arr),n_repeat,380),dtype = complex) #array to store phasors from simulations of different n_photon
+    sim.phasor_bg_list = np.zeros((len(n_photon_arr),n_repeat,380),dtype = complex) #with background
+    for i in range(len(n_photon_arr)):
+        sim.n_photon = n_photon_arr[i] #set n_photon
+        sim.repeat_sim(n_repeat) #generate 100 simulations
+        sim.y_list[i] = sim.sim_data #store 100 decays
+        sim.phasor_list[i] = sim.phasor_data #store 100 phasors
+        w,sim.phasor_bg_list[i] = sim.phasor_fft(sim.sim_data) #phasor with backhround
+        
 class Simulation():
     def __init__(self,amp,tau, run_time=20*60, irfwidth=1e-3,
                  n_bins = 380, window = 20, bg = 10, t0 = 10/19,MC=False):
@@ -598,12 +616,13 @@ class Phasor(Simulation):
             self.solution[:n] = self.A_solve(self.solution)
         return self.solution
 
-    def generate_df(self,w = None, phasor_data = None,num=True):
+    def generate_df(self,w = None, phasor_data = None,x0 = None,idx = None):
         ''' Generate DataFrame of solved A and t values for self.phasor_data (repeated simulations)
         Input: 
         w          angular frequency array
         phasor_data phasor_data array of repeated simulations
-        num        True for numerical solution, False for analytic solution
+        idx         slice or list of index of angular frequencies to be chosen
+
         Output:
         phasor_df DataFrame to store parameters of bi-exponential decays'''
         if w is None:
@@ -614,24 +633,30 @@ class Phasor(Simulation):
         for i in range(len(phasor_data)):
             # sol = self.phasor_solve(w,phasor_data[i],num = num, guess = list((self.amp*self.tau)/np.sum(self.amp*self.tau))+self.tau) #solution
             # sol = {k:v for k,v in zip(['A1','A2','t1','t2'],sol)} #convert solution to dict 
-            sol = {k:v for k,v in zip(['A1','tau1','tau2'],self.phasor_solve_num(phasor_data[i]))} #solution
+            result = self.phasor_solve_num(phasor_data[i],x0=x0,idx=idx) #OptimizeResult
+            result_dict = {k:[v] for k,v in result.items()}
+            n = int((len(result_dict['x'][0])+1)/2)
+            result_dict.update({f'A{j}':[result_dict['x'][0][j-1]] for j in range(1,n)}) #amplitudes
+            result_dict.update({f'tau{j}':[result_dict['x'][0][n+j-2]] for j in range(1,n+1)}) #lifetimes
             #phasor_dict = {str(round(self.w[n]/np.pi/2,2)):phasor_data[i,n]for n in range(1,4)} #record the phasor positions
             #sol.update(phasor_dict)# append dictionary
-            self.df = pd.concat([self.df,pd.DataFrame(sol, index=[i])]) #concatenate the results into 1 dataframe
+            self.df = pd.concat([self.df,pd.DataFrame(result_dict, index=[i])]) #concatenate the results into 1 dataframe
         return self.df
 
-    def phasor_eq_func(self,A_tau_arr,phasor):
+    def phasor_eq_func(self,A_tau_arr,phasor,idx=None):
         '''Function to be passed to phasor_solve_num to solve for A_tau array (A1, tau1, tau2)
         Input: 
         A_tau_arr    parameter array A1 tau1, tau2
-        phasor       phasor array from Simulation().phasor to be resolved '''
+        phasor       phasor array from Simulation().phasor to be resolved 
+        idx          slice or list to specify choice of w'''
         n = int((len(A_tau_arr)+1)/2) #number of components
         # A_tau_arr = np.insert(A_tau_arr,n-1,1-np.sum(A_tau_arr[:n-1])) #insert An
         y  = sum([A_tau_arr[j] * np.exp(-self.t / A_tau_arr[j+n-1]) for j in range(n-1)]) #pure multiexponential
-        y+= (1-np.sum(A_tau_arr[:n-1]))*np.exp(-self.t / A_tau_arr[-1])
+        y+= (1-np.sum(A_tau_arr[:n-1]))*np.exp(-self.t / A_tau_arr[-1]) #last component
         y = np.convolve(y,self.ker,'full')[:self.n_bins]/np.sum(self.ker)
         w,phasor_test = self.phasor_fft(y=y) 
-        return phasor_test.real[:2*n-1]-phasor.real[:2*n-1] #select 1st-2n-1th harmonics
+        idx = idx or slice(0,2*n-1)
+        return phasor_test.real[idx]-phasor.real[idx] #select 1st-2n-1th harmonics
 
     def phasor_eq_func2(self,A_tau_arr,phasor):
         '''Function to be passed to phasor_solve_num to solve for A_tau array (A1, tau1, tau2)
@@ -656,15 +681,20 @@ class Phasor(Simulation):
         phasor_compare = phasor_test.real[:2*n-1]-phasor.real[:2*n-1] #solve for A_tau_arr such that it gives 0
         return [A_sum]+list(phasor_compare) #
 
-    def phasor_solve_num(self,phasor=None,x0=None):
+    def phasor_solve_num(self,phasor=None,x0=None,idx=None):
         '''Solve for amplitude and lifetimes numerically using 3 phasors for 3 parameters (A1, tau1, tau2)
+        Input:
         phasor      phasor array (Simulation().phasor) to be resolved
-        x0          initial guess for a_tau_arr'''
+        x0          initial guess for a_tau_arr
+        idx          slice or list to specify choice of w
+        Output:
+        OptimizeResult object
+        '''
         if phasor is None:
             phasor = self.phasor
         if x0 is None:
             x0 = np.concatenate([self.amp[:-1],self.tau])
-        return fsolve(self.phasor_eq_func,x0=x0,args = phasor)
+        return root(self.phasor_eq_func,x0=x0,args = (phasor,idx))
 
     def phasor_solve_num2(self,phasor=None,x0=None):
         '''Solve for amplitude and lifetimes numerically using 3 phasors for 3 parameters (A1, tau1, tau2)
