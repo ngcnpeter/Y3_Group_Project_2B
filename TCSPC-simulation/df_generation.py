@@ -12,6 +12,7 @@ def n_case_df(df_list,col):
     return pd.concat(df_list_case,keys = range(20)) 
 
 EGFP = Phasor([0.497,0.503],[2.43,3.07]) #Initialize phasor object
+repeat_sim_n(EGFP)
 
 #############  LOAD DATA ########################
 EGFP.y_list,EGFP.y_bg_list,EGFP.phasor_list,EGFP.phasor_bg_list = np.load('df/EGFP_data.npy')
