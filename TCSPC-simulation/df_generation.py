@@ -9,18 +9,18 @@ def n_case_df(df_list,col):
     for df in df_list:
         n_val_df =pd.concat(df,keys = col,axis = 1) #concat dfs of n cases along axis 1
         df_list_case.append(n_val_df) #append each photon number case
-    return pd.concat(df_list_case,keys = range(20)) 
+    return pd.concat(df_list_case,keys = range(len(df_list_case))) 
 
-EGFP = Phasor([0.497,0.503],[2.43,3.07]) #Initialize phasor object
-repeat_sim_n(EGFP)
-
+EGFP = Phasor([0.497,0.503],[2.43,3.07]) #Initialize phasor object (2A:[0.81,0.19],[0.36,2.7])
+n_photon_arr = np.logspace(4,9,40)       #array for total number of photons
+repeat_sim_n(EGFP,n_photon_arr = n_photon_arr )
+np.save('df/EGFP_data_40',[EGFP.y_list,EGFP.y_bg_list,EGFP.phasor_list,EGFP.phasor_bg_list])
 #############  LOAD DATA ########################
-EGFP.y_list,EGFP.y_bg_list,EGFP.phasor_list,EGFP.phasor_bg_list = np.load('df/EGFP_data.npy')
-EGFP.y_list=EGFP.y_list.astype(int)
-EGFP.y_bg_list=EGFP.y_bg_list.astype(int)
+# EGFP.y_list,EGFP.y_bg_list,EGFP.phasor_list,EGFP.phasor_bg_list = np.load('df/EGFP_data.npy')
+# EGFP.y_list=EGFP.y_list.astype(int)
+# EGFP.y_bg_list=EGFP.y_bg_list.astype(int)
 
 #############  REPEAT FITTING/PARAMETER GENERATION FOR DATA ########################
-n_photon_arr = np.logspace(4,9,20)
 df_list = []   #mle
 df_ls_list = [] #least squares
 df_p_list = [] #phasor
@@ -53,3 +53,7 @@ df_p   = n_case_df(df_p_list,col = ['bg1','bg2','no_bg'])                       
 df_mle.to_csv('df/df_mle.csv')
 df_ls.to_csv('df/df_ls.csv')
 df_p.to_csv('df/df_p.csv')
+
+# df_mle.to_csv('df_2A/df_mle_2A.csv')
+# df_ls.to_csv('df_2A/df_ls_2A.csv')
+# df_p.to_csv('df_2A/df_p_2A.csv')

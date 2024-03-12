@@ -555,7 +555,7 @@ class Simulation():
             p1['c'].set(value = 0,vary = False)
         mi1 = lmfit.minimize(residual, p1, args=(tdata, ydata,weights,resid_func), method=method)
         par_dict = {k:[v.value] for k,v in mi1.params.items()} #turn params values into dict
-        par_dict.update({'red_chi2':[mi1.redchi],'nfev':[mi1.nfev]}) #include reduced chi2 and nfev
+        par_dict.update({'red_chi2':[mi1.redchi],'nfev':[mi1.nfev],'success':[mi1.success]}) #include reduced chi2 and nfev
         A_sum = sum([par_dict[f'A{j}'][0] for j in range(1,N+1)]) #sum all An
         for i in range(1,N+1):
             par_dict[f'A{i}'][0]=par_dict[f'A{i}'][0]/A_sum #rescale An
@@ -566,7 +566,7 @@ class Simulation():
         if sim_data is None:
             sim_data = self.sim_data
         df_list = []
-        for j in range(100):
+        for j in range(len(sim_data)):
             df_list.append( self.MLEfit(N,self.t,sim_data[j],resid_func=resid_func,method=method,r=r,rescale=rescale,bg=bg))
             self.mle_df= pd.concat(df_list).reset_index()
         return self.mle_df.drop(['index'],axis =1)
