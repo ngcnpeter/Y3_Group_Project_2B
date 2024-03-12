@@ -759,10 +759,10 @@ class Phasor(Simulation):
         Input: 
         A_tau_arr    parameter array A1 tau1, tau2
         phasor       phasor array from Simulation().phasor to be resolved '''
-        y  = exp2(self.t,A_tau_arr[0],*A_tau_arr[1:]) #pure multiexponential
-        y = np.convolve(y,self.ker,'full')[:self.n_bins]/np.sum(self.ker)
-        w,phasor_test = self.phasor_fft(y=y) 
-        return phasor_test.real[1:4]-phasor.real[1:4]
+        A_tau_arr = np.insert(A_tau_arr,n-1,1-np.sum(A_tau_arr[:n-1])) #insert An
+        A_tau_arr = np.insert(A_tau_arr,n-1,1-np.sum(A_tau_arr[:n-1])) #insert An
+        phasor_test = multi_exp_FT() 
+        return phasor_test.real[:3]-phasor.real[:3]
 
     def phasor_eq_func_A_vary(self,A_tau_arr,phasor):
         '''Function to be passed to phasor_solve_num to solve for A_tau array (A1,A2, tau1, tau2)
