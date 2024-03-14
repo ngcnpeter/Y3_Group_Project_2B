@@ -553,9 +553,9 @@ class Simulation():
         p1 = initial_params(N, np.max(ydata)*self.amp, self.tau, rescale=rescale)
         if bg == False: #background removed
             p1['c'].set(value = 0,vary = False)
-        mi1 = lmfit.minimize(residual, p1, args=(tdata, ydata,weights,resid_func), method=method)
-        par_dict = {k:[v.value] for k,v in mi1.params.items()} #turn params values into dict
-        par_dict.update({'red_chi2':[mi1.redchi],'nfev':[mi1.nfev],'success':[mi1.success]}) #include reduced chi2 and nfev
+        self.mi1 = lmfit.minimize(residual, p1, args=(tdata, ydata,weights,resid_func), method=method)
+        par_dict = {k:[v.value] for k,v in self.mi1.params.items()} #turn params values into dict
+        par_dict.update({'red_chi2':[self.mi1.redchi],'nfev':[self.mi1.nfev],'success':[self.mi1.success]}) #include reduced chi2 and nfev
         A_sum = sum([par_dict[f'A{j}'][0] for j in range(1,N+1)]) #sum all An
         for i in range(1,N+1):
             par_dict[f'A{i}'][0]=par_dict[f'A{i}'][0]/A_sum #rescale An
@@ -759,10 +759,12 @@ class Phasor(Simulation):
         Input: 
         A_tau_arr    parameter array A1 tau1, tau2
         phasor       phasor array from Simulation().phasor to be resolved '''
+        n = int((len(A_tau_arr)+1)/2)
         A_tau_arr = np.insert(A_tau_arr,n-1,1-np.sum(A_tau_arr[:n-1])) #insert An
-        A_tau_arr = np.insert(A_tau_arr,n-1,1-np.sum(A_tau_arr[:n-1])) #insert An
-        phasor_test = multi_exp_FT() 
-        return phasor_test.real[:3]-phasor.real[:3]
+        A = A_tau_arr[:n]
+        tau = A_tau_arr[n:]
+        phasor_test = multi_exp_FT(self.w,A,tau) 
+        return phasor_test.real[:2*n-1]-phasor.real[:2*n-1]
 
     def phasor_eq_func_A_vary(self,A_tau_arr,phasor):
         '''Function to be passed to phasor_solve_num to solve for A_tau array (A1,A2, tau1, tau2)
