@@ -79,8 +79,25 @@ def poisson_deviance_residual(observed, expected):
     residual=  np.sqrt(abs(2 *  (observed* np.log(observed/ expected) - (observed- expected)))) #residual array
     return residual
 
-def residual(p, t, data):
+def exp_N(t,p):
+    '''Input: time array,lmfit.Parameter()
+       Output: multi-exp model from parameter
+       '''
     v = p.valuesdict()
+    expected = v['c'] #constant background
+    M = 1
+    #loop through parameters created from initial_params
+    while f'A{M}' in v:
+        expected += exp(t, v[f'A{M}'], v[f'tau{M}']) #add exponential component
+        M += 1          
+    return expected
+
+def residual(p, t, data):
+    '''Returns residual array for lmfit minimizer
+    Input: p      lmfit.Parameter()
+           t      time array    
+           data   ydata to be fitted     '''
+    v = p.valuesdict() #convert parameter object to dict
     expected = v['c'] #constant background
     M = 1
     while f'A{M}' in v:
