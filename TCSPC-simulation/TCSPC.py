@@ -175,6 +175,16 @@ def plot_fit(result):
     ax[0].text(xdata[-1]*0.7,np.logspace(-0.5,-0.85,4)[3],rf'reduced $\chi^2$ = {result.redchi:0.3f}')
     return fig,ax
 
+def get_phasor(y):
+    '''y is intensity decay not convoluted with IRF'''
+    if len(np.shape(y)) == 1:
+            y_sum = np.sum(y)
+    else:
+        y_sum = np.sum(y, axis = 1)
+        #transpose to allow division for multiple decay curves
+    phasor = (np.fft.fft(y).T/y_sum).T
+    return np.conjugate(phasor)
+
 def deconv_fft(signal,kernel):
     '''Deconvolve decay data with IRF kernel using FFT
     Input:  signal - convolved/original signal (1d array)
@@ -295,6 +305,8 @@ def phasor_solve(w,phasor,n=2,num = False,guess=None):
         solution = solve(equations)[0]
         solution = {str(k):float(v) for k,v in solution.items()} #convert symbols to string
     return solution
+
+
 
 def repeat_sim_n(sim,n_photon_arr = np.logspace(4,9,20).astype(int),n_repeat = 100):
     '''Store results of simulations for Simulation object sim 
@@ -589,7 +601,7 @@ class Simulation():
         return self.mle_df.drop(['index'],axis =1)
             
 
-    def phasor_fft(self,y=None,MC=False,multi = True,n_bins = None, window = None):
+    def phasor_fft(self,y=None,MC=False,multi = True,n_bins = None, window = None,deconv = False):
         '''Generate phasor of multi-exponetial decay curves for an array of lifetimes (n_tau) with corresponding amplitudes
         Photon count rate is 2500 per s
         Input:  amp (1d array of amplitudes of each lifetime component)
@@ -597,6 +609,7 @@ class Simulation():
                 run_time (in s)
                 irfwidth  (sigma of Gaussian IRF)
                 n_bins no. of bins. default self.n_bins
+                deconv  deconvolve IRF using FFT if true
 
         output: angular frequency w, phasor (array of complex number, real<->g, -imag <->s coordinate )'''
         #set default values unless specified
@@ -607,11 +620,19 @@ class Simulation():
                 y = self.y2
             else:
                 y = self.y
-        ker = kernel(self.t)
-        self.w, self.phasor = phasor_fft(y,ker,self.window/len(self.t))
+        if deconv == False:
+            if len(np.shape(y)) == 1: #only 1 array
+                y = y[10:]
+            else:
+                y = y[:,10:]
+            self.phasor = get_phasor(y)
+            self.w = 2*np.pi*np.fft.fftfreq(len(self.t[10:]),self.window/len(self.t))
+        else:
+            ker = kernel(self.t)
+            self.w, self.phasor = phasor_fft(y,ker,self.window/len(self.t))
         return self.w, self.phasor
 
-    def repeat_sim(self,n_repeat,MC = False, multi = True):
+    def repeat_sim(self,n_repeat,MC = False, multi = True,deconv = False,no_bg = True):
         '''Store photon count array of n_repeat simulations in sim_data (n_repeat by n_bins) array'''
         #create array to store simulation data
         self.sim_data = np.zeros((n_repeat,self.n_bins))
@@ -624,7 +645,10 @@ class Simulation():
                 bins,y = self.MC_exp_hist()
             self.sim_data[i] = y             #store simulated data
         #background  needs to be removed before phasor transformation
-        self.w, self.phasor_data = phasor_fft(self.sim_data-self.bg*self.run_time/self.n_bins,self.ker,self.dt) #transform stored data to phasor
+        self.sim_data_no_bg = self.sim_data-self.bg*self.run_time/self.n_bins
+        self.w, self.phasor_data = self.phasor_fft(self.sim_data_no_bg,self.ker,self.dt,deconv=deconv) #transform stored data to phasor
+        self.w, self.phasor_data_bg = self.phasor_fft(self.sim_data,self.ker,self.dt,deconv=deconv)
+        self.phasor = self.phasor[-1] #choose last phasor array only
     
     def repeat_sim_results(self,sim_data = None,weights = None,method='powell',end = None, 
             bg = None,guess=None,par_col = ['_val','init_value','stderr','correl']):
