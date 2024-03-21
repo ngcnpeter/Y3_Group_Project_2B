@@ -244,6 +244,19 @@ def exp_FT(omega,tau):
     W, Tau = np.meshgrid(omega,tau)
     return 1/(1+(W*Tau)**2) + 1j*W*Tau/(1+(W*Tau)**2)
 
+def exp_DFT(omega,tau,dt=1/19,alpha= 2*np.pi/380):
+    '''Analytic solution to Fourier Transform (normalized, i.e. divided by int_0^infty exp(-t/tau)dt) 
+    of mono exponential decay with components lifetime tau
+    Input:
+    omega     angular frequency array
+    tau       lifetime
+    dt        sampling time interval
+    alpha     2*pi/N,  N samples
+    '''
+    W, Tau = np.meshgrid(omega,tau)
+    X = np.exp(-dt/Tau)
+    return (1-X)/(1-X*np.exp(1j*W*dt))
+
 def multi_exp_FT(omega,A,tau):
     '''Analytic solution to Fourier Transform (normalized, i.e. divided by int_0^infty exp(-t/tau)dt) 
     of multi exponential decay with components lifetime tau
@@ -253,6 +266,18 @@ def multi_exp_FT(omega,A,tau):
     tau       lifetime'''
     coeff = A*tau/np.sum(A*tau) #coefficient of the sum of mono_exp_FT
     mono_arr = exp_FT(omega,tau)#array of FT of each lifetime
+    return np.dot(coeff,mono_arr)
+
+def multi_exp_DFT(omega,A,tau,dt=1/19,alpha= 2*np.pi/380):
+    '''Analytic solution to Fourier Transform (normalized, i.e. divided by int_0^infty exp(-t/tau)dt) 
+    of multi exponential decay with components lifetime tau
+    Input:
+    omega     angular frequency array
+    A         amplitude array
+    tau       lifetime'''
+    coeff = A/(1-np.exp(-dt/tau))
+    coeff /= np.sum(coeff) #coefficient of the sum of mono_exp_FT
+    mono_arr = exp_DFT(omega,tau,dt=dt,alpha=alpha)#array of FT of each lifetime
     return np.dot(coeff,mono_arr)
 
 
@@ -446,7 +471,7 @@ class Simulation():
         acquisitiontime = self.run_time
         irfwidth = self.irfwidth
         t0 = self.t0  #IRF offset, ns
-        self.t = np.linspace(0,self.window,self.n_bins)
+        self.t = np.linspace(0,self.window,self.n_bins+1)[:-1]
         if irfwidth == 0:
             irfwidth = 1e-8
  
@@ -753,12 +778,13 @@ class Phasor(Simulation):
             self.solution[:n] = self.A_solve(self.solution)
         return self.solution
 
-    def generate_df(self,w = None, phasor_data = None,x0 = None,idx = None):
+    def generate_df(self,w = None, phasor_data = None,x0 = None,idx = None,func=None,deconv = False):
         ''' Generate DataFrame of solved A and t values for self.phasor_data (repeated simulations)
         Input: 
         w          angular frequency array
         phasor_data phasor_data array of repeated simulations
         idx         slice or list of index of angular frequencies to be chosen
+        func        function to be passed to root finder
 
         Output:
         phasor_df DataFrame to store parameters of bi-exponential decays'''
@@ -766,11 +792,13 @@ class Phasor(Simulation):
             w = self.w 
         if phasor_data is None:
             phasor_data = self.phasor_data
+        if func is None:
+            func = self.phasor_eq_func
         self.df = pd.DataFrame()
         for i in range(len(phasor_data)):
             # sol = self.phasor_solve(w,phasor_data[i],num = num, guess = list((self.amp*self.tau)/np.sum(self.amp*self.tau))+self.tau) #solution
             # sol = {k:v for k,v in zip(['A1','A2','t1','t2'],sol)} #convert solution to dict 
-            result = self.phasor_solve_num(phasor_data[i],x0=x0,idx=idx) #OptimizeResult
+            result = self.phasor_solve_num(phasor_data[i],x0=x0,idx=idx,deconv=deconv,func=func) #OptimizeResult
             result_dict = {k:[v] for k,v in result.items()}
             n = int((len(result_dict['x'][0])+1)/2)
             result_dict.update({f'A{j}':[result_dict['x'][0][j-1]] for j in range(1,n)}) #amplitudes
@@ -780,22 +808,23 @@ class Phasor(Simulation):
             self.df = pd.concat([self.df,pd.DataFrame(result_dict, index=[i])]) #concatenate the results into 1 dataframe
         return self.df
 
-    def phasor_eq_func(self,A_tau_arr,phasor,idx=None):
+    def phasor_eq_func(self,A_tau_arr,phasor,idx=None,deconv = False):
         '''Function to be passed to phasor_solve_num to solve for A_tau array (A1, tau1, tau2)
         Input: 
         A_tau_arr    parameter array A1 tau1, tau2
         phasor       phasor array from Simulation().phasor to be resolved 
-        idx          slice or list to specify choice of w'''
+        idx          slice or list to specify choice of w
+        deconv       True to deconvolve with fft'''
         n = int((len(A_tau_arr)+1)/2) #number of components
         # A_tau_arr = np.insert(A_tau_arr,n-1,1-np.sum(A_tau_arr[:n-1])) #insert An
         y  = sum([A_tau_arr[j] * np.exp(-self.t / A_tau_arr[j+n-1]) for j in range(n-1)]) #pure multiexponential
         y+= (1-np.sum(A_tau_arr[:n-1]))*np.exp(-self.t / A_tau_arr[-1]) #last component
         y = np.convolve(y,self.ker,'full')[:self.n_bins]/np.sum(self.ker)
-        w,phasor_test = self.phasor_fft(y=y) 
+        w,phasor_test = self.phasor_fft(y=y,deconv = deconv) 
         idx = idx or slice(0,2*n-1)
         return phasor_test.real[idx]-phasor.real[idx] #select 1st-2n-1th harmonics
 
-    def phasor_eq_func2(self,A_tau_arr,phasor):
+    def phasor_eq_func_cont(self,A_tau_arr,phasor,idx = None,deconv = False):
         '''Function to be passed to phasor_solve_num to solve for A_tau array (A1, tau1, tau2)
         Input: 
         A_tau_arr    parameter array A1 tau1, tau2
@@ -805,9 +834,23 @@ class Phasor(Simulation):
         A = A_tau_arr[:n]
         tau = A_tau_arr[n:]
         phasor_test = multi_exp_FT(self.w,A,tau) 
+        idx = idx or slice(0,2*n-1)
         return phasor_test.real[:2*n-1]-phasor.real[:2*n-1]
 
-    def phasor_eq_func_A_vary(self,A_tau_arr,phasor):
+    def phasor_eq_func_DFT(self,A_tau_arr,phasor,idx = None,deconv = False):
+        '''Function to be passed to phasor_solve_num to solve for A_tau array (A1, tau1, tau2)
+        Input: 
+        A_tau_arr    parameter array A1 tau1, tau2
+        phasor       phasor array from Simulation().phasor to be resolved '''
+        n = int((len(A_tau_arr)+1)/2)
+        A_tau_arr = np.insert(A_tau_arr,n-1,1-np.sum(A_tau_arr[:n-1])) #insert An
+        A = A_tau_arr[:n]
+        tau = A_tau_arr[n:]
+        phasor_test = multi_exp_DFT(self.w,A,tau) 
+        idx = idx or slice(0,2*n-1)
+        return phasor_test.real[:2*n-1]-phasor.real[:2*n-1]
+
+    def phasor_eq_func_A_vary(self,A_tau_arr,phasor,idx = None,deconv = False):
         '''Function to be passed to phasor_solve_num to solve for A_tau array (A1,A2, tau1, tau2)
         Input: 
         A_tau_arr    parameter array A1,A2 tau1, tau2
@@ -820,12 +863,14 @@ class Phasor(Simulation):
         phasor_compare = phasor_test.real[:2*n-1]-phasor.real[:2*n-1] #solve for A_tau_arr such that it gives 0
         return [A_sum]+list(phasor_compare) #
 
-    def phasor_solve_num(self,phasor=None,x0=None,idx=None):
+    def phasor_solve_num(self,phasor=None,x0=None,idx=None,func = None,deconv=False):
         '''Solve for amplitude and lifetimes numerically using 3 phasors for 3 parameters (A1, tau1, tau2)
         Input:
         phasor      phasor array (Simulation().phasor) to be resolved
         x0          initial guess for a_tau_arr
         idx          slice or list to specify choice of w
+        func        func to be passed to root finder
+        deconv      True to deconvolove with FFT
         Output:
         OptimizeResult object
         '''
@@ -833,7 +878,9 @@ class Phasor(Simulation):
             phasor = self.phasor
         if x0 is None:
             x0 = np.concatenate([self.amp[:-1],self.tau])
-        return root(self.phasor_eq_func,x0=x0,args = (phasor,idx))
+        if func is None:
+            func = self.phasor_eq_func
+        return root(func,x0=x0,args = (phasor,idx,deconv))
 
     def phasor_solve_num2(self,phasor=None,x0=None):
         '''Solve for amplitude and lifetimes numerically using 3 phasors for 3 parameters (A1, tau1, tau2)
