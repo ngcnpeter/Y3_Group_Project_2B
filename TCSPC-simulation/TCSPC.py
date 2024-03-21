@@ -275,7 +275,7 @@ def multi_exp_DFT(omega,A,tau,dt=1/19,alpha= 2*np.pi/380):
     omega     angular frequency array
     A         amplitude array
     tau       lifetime'''
-    coeff = A/(1-np.exp(-dt/tau))
+    coeff = A/(1-np.exp(-1/np.array(tau)/19))
     coeff /= np.sum(coeff) #coefficient of the sum of mono_exp_FT
     mono_arr = exp_DFT(omega,tau,dt=dt,alpha=alpha)#array of FT of each lifetime
     return np.dot(coeff,mono_arr)
@@ -422,7 +422,17 @@ def initial_params(M,A_guess,tau_guess,c_guess = 0,rescale = True,bg_removed = F
     if rescale == True:
         p[f'A{M}'].set(expr = f'1 {"".join([f"- A{i}" for i in range(1,M)])}') #fix the amplitude of last component
     return p
-
+    
+def n_case_df(df_list,col):
+    '''Return df for cases in df_list
+       Input:
+       df_list  list of the structure [[df_1,df_2,...df_n_case],...,] (nested list of 20 (n_photon_arr) by n_case)
+       col      col names for the cases'''
+    df_list_case = []
+    for df in df_list:
+        n_val_df =pd.concat(df,keys = col,axis = 1) #concat dfs of n cases along axis 1
+        df_list_case.append(n_val_df) #append each photon number case
+    return pd.concat(df_list_case,keys = range(20)) 
         
 class Simulation():
     def __init__(self,amp,tau, run_time=20*60, irfwidth=1e-3,
@@ -727,9 +737,17 @@ class Phasor(Simulation):
         A_soln = solve(A_eqs,[n for n in A]) #solve for A in terms of f and t
         #Dictionary of functions to evaluate A_i {'A_i':A_i_sol_func}
         self.A_funcs = [lambdify([v for v in f]+[v for v in t], expr) for key, expr in A_soln.items()]
-        return self.A_funcs
 
-    def A_solve(self,f_t_tuple):
+        ###discrete
+        A_eqs = [A[i]/(1-sp.exp(-1/t[i]/19))/sum([A[j]/(1-sp.exp(-1/t[j]/19)) for j in range(n)])-f[i] for i in range(n-1)] #discrete coefficient
+        A_eqs.append(sum([A[i] for i in range(n)])-1 )
+        A_soln = solve(A_eqs,[n for n in A]) #solve for A in terms of f and t
+        #Dictionary of functions to evaluate A_i {'A_i':A_i_sol_func}
+        self.A_funcs_discrete = [lambdify([v for v in f]+[v for v in t], expr) for key, expr in A_soln.items()]
+
+        return self.A_funcs,self.A_funcs_discrete
+
+    def A_solve(self,f_t_tuple,discrete=True):
         '''Return an array of amplitude  A_i of n-eponential evaluated at
         calculated weighting (f_i) and lifetimes (t_i) in phasor plot
         using functions in self.A_funcs
@@ -739,8 +757,13 @@ class Phasor(Simulation):
         Output:
         array of A1,...An
         '''
-        A_array = [func(*f_t_tuple) for func in self.A_funcs]
-        return np.array(A_array)
+        
+        if discrete == True:
+            A_array_discrete = [func(*f_t_tuple) for func in self.A_funcs_discrete]
+            return np.array(A_array_discrete)
+        else: 
+            A_array = [func(*f_t_tuple) for func in self.A_funcs]
+            return np.array(A_array)
 
     def phasor_solve(self,w=None,phasor=None,n=2,num = False,guess=None):
         '''Solve for samplitudes and lifetimes from simulated phasor coordinates
