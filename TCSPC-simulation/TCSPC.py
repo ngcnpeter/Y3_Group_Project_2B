@@ -175,6 +175,9 @@ def plot_fit(result):
     ax[0].text(xdata[-1]*0.7,np.logspace(-0.5,-0.85,4)[3],rf'reduced $\chi^2$ = {result.redchi:0.3f}')
     return fig,ax
 
+
+
+
 def get_phasor(y):
     '''y is intensity decay not convoluted with IRF'''
     if len(np.shape(y)) == 1:
@@ -644,6 +647,41 @@ class Simulation():
             df_list.append( self.MLEfit(N,self.t,sim_data[j],resid_func=resid_func,method=method,r=r,rescale=rescale,bg=bg))
             self.mle_df= pd.concat(df_list).reset_index()
         return self.mle_df.drop(['index'],axis =1)
+       
+    def plot_mle(self, result,tdata = None,ydata = None, title = 'MLE Fitting (Powell)'):
+        '''Plots the fit result by lmfit.minimizer
+        INPUT: 
+        result   minimizer result
+        tdata    time array
+        ydata    data to be fitted
+
+        '''
+        if tdata is None:
+            tdata = self.t
+        if ydata is None:
+            ydata = self.y2
+        fig,ax = plt.subplots(2,1,figsize = (6,6),gridspec_kw = {'height_ratios':[4,1]},sharex = True)
+        tdata,ydata,weights = trim_rescale_data(tdata,ydata,rescale = False,)
+        ax[0].errorbar(tdata,ydata,yerr = 1/weights,fmt = 'x',zorder = 1,alpha = 0.7) #original data
+        ax[0].plot(tdata,exp_N(tdata,result.params),zorder = 2)
+        ax[0].set_yscale('log')
+        for i in range(len(self.mi1.params.values())):
+            t_text = tdata[-1]*0.6
+            y_text = np.logspace(np.log10(min(ydata)),np.log10(max(ydata)),100)
+            ax[0].text(t_text,y_text[80-5*i],[v.name + rf' = {v.value:0.3f} $\pm$ {v.stderr:0.3f}' for v in result.params.values()][i])
+        ax[0].text(t_text,y_text[80-5*5],rf'reduced $\chi^2$ = {result.redchi:0.3f}')
+        ax[0].set_title(title)
+        ax[1].set_ylabel('Normalized residuals')
+        ax[1].plot(tdata,result.residual,'x')
+        ax[1].axhline(0,c='k')
+        ax[1].add_patch(mpl.patches.Rectangle((0,-1),tdata[-1],2,alpha = 0.3,color='g'))
+        ax[1].set_yticks([-2,-1,0,1,2])
+        for i in range(2):
+            ax[i].set_xlim([0,tdata[-1]])
+        ax[0].set_ylabel('Number of photons')
+        ax[1].set_xlabel('Time/ns')
+        ax[0].set_xlabel('')
+        return fig,ax
             
 
     def phasor_fft(self,y=None,MC=False,multi = True,n_bins = None, window = None,deconv = False):
