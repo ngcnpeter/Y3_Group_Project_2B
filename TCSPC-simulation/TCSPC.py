@@ -341,10 +341,10 @@ def repeat_sim_n(sim,n_photon_arr = np.logspace(4,9,20).astype(int),n_repeat = 1
     n_photon_arr   Number of photons (collected in total) array
     n_repeat       Number of repeats in simulation
     '''
-    sim.y_list = np.zeros((len(n_photon_arr),n_repeat,380)) #array to store 100 simulations of time domain data for each n_photon
-    sim.y_bg_list= np.zeros((len(n_photon_arr),n_repeat,380))
-    sim.phasor_list = np.zeros((len(n_photon_arr),n_repeat,380),dtype = complex) #array to store phasors from simulations of different n_photon
-    sim.phasor_bg_list = np.zeros((len(n_photon_arr),n_repeat,380),dtype = complex) #with background
+    sim.y_list = np.zeros((len(n_photon_arr),n_repeat,len(sim.y2))) #array to store 100 simulations of time domain data for each n_photon
+    sim.y_bg_list= np.zeros((len(n_photon_arr),n_repeat,len(sim.y2)))
+    sim.phasor_list = np.zeros((len(n_photon_arr),n_repeat,len(sim.phasor)),dtype = complex) #array to store phasors from simulations of different n_photon
+    sim.phasor_bg_list = np.zeros((len(n_photon_arr),n_repeat,len(sim.phasor)),dtype = complex) #with background
     for i in range(len(n_photon_arr)):
         sim.n_photon = n_photon_arr[i] #set n_photon
         sim.repeat_sim(n_repeat) #generate 100 simulations
@@ -422,7 +422,7 @@ def initial_params(M,A_guess,tau_guess,c_guess = 0,rescale = True,bg_removed = F
     if rescale == True:
         p[f'A{M}'].set(expr = f'1 {"".join([f"- A{i}" for i in range(1,M)])}') #fix the amplitude of last component
     return p
-    
+
 def n_case_df(df_list,col):
     '''Return df for cases in df_list
        Input:
@@ -613,6 +613,16 @@ class Simulation():
             ax.set_xlabel('time/ns')
 
     def MLEfit(self,N,tdata,ydata,resid_func = poisson_deviance_residual,method ='powell',r=10,rescale=False,bg=True):
+        '''Perofrms mle fit 
+           N         N exponential component
+           tdata     time array
+           ydata     data to be fitted
+           resid_func  residual to be chosen for mle (here poisson model)
+           method    fitting algorithm
+           r = 10    minimum y required y<r trimmed
+           rescale   True if the data needs to be rescaled
+           bg        True if background is not removed and constant parameter is needed
+           '''
         tdata, ydata, weights = trim_rescale_data(tdata,ydata, r=r, rescale=rescale)
         p1 = initial_params(N, np.max(ydata)*self.amp, self.tau, rescale=rescale)
         if bg == False: #background removed
@@ -711,7 +721,7 @@ class Simulation():
             self.fit_results.append(self.fit_result)
         warnings.resetwarnings()
         self.info_df, self.par_df = fit_df(self.fit_results,par_col=par_col)
-        self.val_df = self.par_df.loc[(slice(0,99),'_val'),:] #df for values only
+        self.value_df = self.par_df.loc[(slice(0,99),'_val'),:] #df for values only
 
 
 class Phasor(Simulation):
